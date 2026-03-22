@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DGU ACT App</string>
-    <string name="welcome_title">Minimal Android project</string>
-    <string name="welcome_subtitle">Open this project in Android Studio and start building.</string>
+    <string name="app_name">Акты диагностики ДГУ</string>
+    <string name="app_section_label">Стартовый экран</string>
+    <string name="start_title">Акт диагностики</string>
+    <string name="start_subtitle">Подготовьте новый документ или откройте сохранённые акты для продолжения работы.</string>
+    <string name="new_act_button">Новый акт</string>
+    <string name="acts_list_button">Список актов</string>
+    <string name="bottom_note">Современный и аккуратный интерфейс для работы в Android Studio</string>
 </resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DGU ACT App</string>
+    <string name="welcome_title">Minimal Android project</string>
+    <string name="welcome_subtitle">Open this project in Android Studio and start building.</string>
+</resources>

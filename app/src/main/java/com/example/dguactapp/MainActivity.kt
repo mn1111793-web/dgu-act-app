@@ -1,10 +1,15 @@
 package com.example.dguactapp
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,7 +26,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -57,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +74,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.example.dguactapp.ui.theme.DguActAppTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -322,6 +335,70 @@ fun NewActScreen(
     var requiredWorks by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.requiredWorks.orEmpty())
     }
+    val photos = rememberSaveable(existingAct?.id, saver = ActPhotoListSaver) {
+        existingAct?.photos.orEmpty().toMutableStateList()
+    }
+    var pendingCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
+    var isImportingPhotos by remember { mutableStateOf(false) }
+    var saveCompleted by remember { mutableStateOf(false) }
+    val initialPhotoPaths = remember(existingAct?.id) {
+        existingAct?.photos.orEmpty().map { it.filePath }.toSet()
+    }
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val createdPhoto = pendingCameraPhoto
+        pendingCameraPhoto = null
+        if (success && createdPhoto != null) {
+            photos.add(createdPhoto)
+        } else if (createdPhoto != null) {
+            PhotoStorage.deletePhoto(createdPhoto)
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val createdPhoto = PhotoStorage.createCameraPhoto(context)
+            pendingCameraPhoto = createdPhoto
+            takePictureLauncher.launch(
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    java.io.File(createdPhoto.filePath)
+                )
+            )
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.photos_camera_permission_denied),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        isImportingPhotos = false
+        val imported = uris.mapNotNull { uri -> PhotoStorage.importPhotoFromUri(context, uri) }
+        photos.addAll(imported)
+        if (uris.isNotEmpty() && imported.isEmpty()) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.photos_import_error),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    DisposableEffect(existingAct?.id) {
+        onDispose {
+            if (!saveCompleted) {
+                photos.filterNot { it.filePath in initialPhotoPaths }.forEach(PhotoStorage::deletePhoto)
+            }
+            pendingCameraPhoto?.let(PhotoStorage::deletePhoto)
+        }
+    }
 
     val brandOptions = remember(equipmentCode) {
         if (equipmentCode.isBlank()) emptyList() else EquipmentCatalog.brandOptions(equipmentCode)
@@ -390,6 +467,27 @@ fun NewActScreen(
 
     val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
     val resolvedModel = if (modelSelection == EquipmentCatalog.OTHER_OPTION) customModel else modelSelection
+    val onTakePhotoClick = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            val createdPhoto = PhotoStorage.createCameraPhoto(context)
+            pendingCameraPhoto = createdPhoto
+            takePictureLauncher.launch(
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    java.io.File(createdPhoto.filePath)
+                )
+            )
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+    val onPickPhotoClick = {
+        isImportingPhotos = true
+        galleryLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
 
     BackHandler(onBack = onBackClick)
 
@@ -564,6 +662,60 @@ fun NewActScreen(
             }
 
             item {
+                DetailCard(title = stringResource(id = R.string.photos_section_title)) {
+                    Text(
+                        text = stringResource(id = R.string.photos_section_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = onTakePhotoClick,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text(text = stringResource(id = R.string.photos_take_photo))
+                        }
+                        OutlinedButton(
+                            onClick = onPickPhotoClick,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text(text = stringResource(id = R.string.photos_pick_from_gallery))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    if (isImportingPhotos) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = stringResource(id = R.string.photos_loading),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    PhotoGalleryEditor(
+                        photos = photos,
+                        onDeletePhoto = { photo ->
+                            if (photo.filePath !in initialPhotoPaths) {
+                                PhotoStorage.deletePhoto(photo)
+                            }
+                            photos.removeAll { it.id == photo.id }
+                        }
+                    )
+                }
+            }
+
+            item {
                 DetailCard(title = stringResource(id = R.string.diagnosis_type_title)) {
                     Text(
                         text = stringResource(id = R.string.diagnosis_type_hint),
@@ -664,8 +816,11 @@ fun NewActScreen(
                             checklistItems = checklistItems.toList(),
                             preliminaryConclusion = preliminaryConclusion,
                             rootCause = if (diagnosisType == DiagnosisType.Advanced) rootCause else "",
-                            requiredWorks = if (diagnosisType == DiagnosisType.Advanced) requiredWorks else ""
+                            requiredWorks = if (diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
+                            photos = photos.toList()
                         )
+                        PhotoStorage.deleteMissingPhotos(existingAct?.photos.orEmpty(), act.photos)
+                        saveCompleted = true
                         onSaveClick(act)
                         Toast.makeText(
                             context,
@@ -965,6 +1120,12 @@ fun ActDetailsScreen(
                 }
             )
             DetailCard(
+                title = stringResource(id = R.string.photos_section_title),
+                content = {
+                    PhotoGalleryReadonly(photos = act.photos)
+                }
+            )
+            DetailCard(
                 title = stringResource(id = R.string.act_diagnostic_info_title),
                 content = {
                     InfoLine(stringResource(id = R.string.diagnosis_type_title), act.diagnosisType.title)
@@ -1022,6 +1183,79 @@ private fun DetailCard(
                 fontWeight = FontWeight.Bold
             )
             content()
+        }
+    }
+}
+
+@Composable
+private fun PhotoGalleryEditor(
+    photos: List<ActPhoto>,
+    onDeletePhoto: (ActPhoto) -> Unit
+) {
+    if (photos.isEmpty()) {
+        Text(
+            text = stringResource(id = R.string.photos_empty_state),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        return
+    }
+
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(items = photos, key = { it.id }) { photo ->
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    AsyncImage(
+                        model = photo.uri,
+                        contentDescription = stringResource(id = R.string.photos_thumbnail_description),
+                        modifier = Modifier
+                            .size(132.dp)
+                            .clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = { onDeletePhoto(photo) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = stringResource(id = R.string.photos_delete))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoGalleryReadonly(photos: List<ActPhoto>) {
+    if (photos.isEmpty()) {
+        Text(
+            text = stringResource(id = R.string.photos_empty_state_saved),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        return
+    }
+
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(items = photos, key = { it.id }) { photo ->
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                AsyncImage(
+                    model = photo.uri,
+                    contentDescription = stringResource(id = R.string.photos_thumbnail_description),
+                    modifier = Modifier
+                        .padding(10.dp)
+                        .size(132.dp)
+                        .clip(RoundedCornerShape(14.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
         }
     }
 }

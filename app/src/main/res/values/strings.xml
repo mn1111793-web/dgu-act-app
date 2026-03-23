@@ -73,4 +73,15 @@
     <string name="checklist_column_faulty">Неисправно / замечание</string>
     <string name="checklist_column_comment">Комментарий</string>
     <string name="checklist_comment_placeholder">Комментарий</string>
+    <string name="photos_section_title">Фотографии</string>
+    <string name="photos_section_hint">Снимки прикрепляются прямо к текущему акту и сохраняются вместе с ним.</string>
+    <string name="photos_take_photo">Сделать фото</string>
+    <string name="photos_pick_from_gallery">Выбрать из галереи</string>
+    <string name="photos_loading">Загрузка фотографий…</string>
+    <string name="photos_empty_state">Фотографии ещё не добавлены.</string>
+    <string name="photos_empty_state_saved">Для этого акта фотографии не сохранены.</string>
+    <string name="photos_delete">Удалить</string>
+    <string name="photos_thumbnail_description">Миниатюра фотографии акта</string>
+    <string name="photos_camera_permission_denied">Без разрешения на камеру сделать фото не получится.</string>
+    <string name="photos_import_error">Не удалось импортировать выбранные фотографии.</string>
 </resources>

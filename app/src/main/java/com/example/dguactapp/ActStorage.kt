@@ -10,7 +10,9 @@ data class ActRecord(
     val date: String,
     val customer: String,
     val customerAddress: String,
+    val equipmentCode: String,
     val equipmentName: String,
+    val brand: String,
     val model: String,
     val serialNumber: String,
     val operatingTime: String,
@@ -22,6 +24,7 @@ data class ActRecord(
 object ActStorage {
     private const val preferencesName = "saved_acts"
     private const val actsKey = "acts_json"
+    private val requestNumberRegex = Regex("^[A-Z]+-(\\d+)-\\d{6}$")
 
     fun loadActs(context: Context): List<ActRecord> {
         val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
@@ -39,12 +42,21 @@ object ActStorage {
         }.getOrDefault(emptyList())
     }
 
-    fun saveAct(context: Context, act: ActRecord) {
-        val updatedActs = loadActs(context).toMutableList().apply {
-            add(0, act)
-        }
+    fun upsertAct(context: Context, act: ActRecord) {
+        val updatedActs = loadActs(context)
+            .filterNot { it.id == act.id }
+            .toMutableList()
+            .apply { add(0, act) }
         saveActs(context, updatedActs)
     }
+
+    fun nextSequence(acts: List<ActRecord>): Int = acts.maxOfOrNull { act ->
+        requestNumberRegex.matchEntire(act.requestNumber)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: 0
+    }?.plus(1) ?: 1
 
     private fun saveActs(context: Context, acts: List<ActRecord>) {
         val jsonArray = JSONArray()
@@ -61,7 +73,9 @@ object ActStorage {
         put("date", date)
         put("customer", customer)
         put("customerAddress", customerAddress)
+        put("equipmentCode", equipmentCode)
         put("equipmentName", equipmentName)
+        put("brand", brand)
         put("model", model)
         put("serialNumber", serialNumber)
         put("operatingTime", operatingTime)
@@ -76,7 +90,9 @@ object ActStorage {
         date = optString("date"),
         customer = optString("customer"),
         customerAddress = optString("customerAddress"),
+        equipmentCode = optString("equipmentCode"),
         equipmentName = optString("equipmentName"),
+        brand = optString("brand"),
         model = optString("model"),
         serialNumber = optString("serialNumber"),
         operatingTime = optString("operatingTime"),

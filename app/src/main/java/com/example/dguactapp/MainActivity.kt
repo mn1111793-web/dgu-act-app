@@ -23,12 +23,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,10 +58,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.dguactapp.ui.theme.DguActAppTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private enum class AppScreen {
     Start,
@@ -94,14 +104,29 @@ private fun DguActApp() {
 
     when (AppScreen.valueOf(currentScreen)) {
         AppScreen.Start -> StartScreen(
-            onNewActClick = { currentScreen = AppScreen.NewAct.name },
+            onNewActClick = {
+                selectedActId = -1L
+                currentScreen = AppScreen.NewAct.name
+            },
             onActsListClick = { currentScreen = AppScreen.ActsList.name }
         )
 
         AppScreen.NewAct -> NewActScreen(
-            onBackClick = { currentScreen = AppScreen.Start.name },
+            existingAct = selectedAct,
+            existingActs = savedActs,
+            onBackClick = {
+                currentScreen = if (selectedAct != null) {
+                    AppScreen.ActDetails.name
+                } else {
+                    AppScreen.Start.name
+                }
+            },
             onSaveClick = { act ->
-                ActStorage.saveAct(context, act)
+                ActStorage.upsertAct(context, act)
+                val existingIndex = savedActs.indexOfFirst { it.id == act.id }
+                if (existingIndex >= 0) {
+                    savedActs.removeAt(existingIndex)
+                }
                 savedActs.add(0, act)
                 selectedActId = act.id
                 currentScreen = AppScreen.ActDetails.name
@@ -120,7 +145,8 @@ private fun DguActApp() {
         AppScreen.ActDetails -> if (selectedAct != null) {
             ActDetailsScreen(
                 act = selectedAct,
-                onBackClick = { currentScreen = AppScreen.ActsList.name }
+                onBackClick = { currentScreen = AppScreen.ActsList.name },
+                onEditClick = { currentScreen = AppScreen.NewAct.name }
             )
         } else {
             ActsListScreen(
@@ -232,21 +258,122 @@ fun StartScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewActScreen(
+    existingAct: ActRecord? = null,
+    existingActs: List<ActRecord> = emptyList(),
     onBackClick: () -> Unit = {},
     onSaveClick: (ActRecord) -> Unit = {}
 ) {
     val context = LocalContext.current
-    var requestNumber by rememberSaveable { mutableStateOf("") }
-    var date by rememberSaveable { mutableStateOf("") }
-    var customer by rememberSaveable { mutableStateOf("") }
-    var customerAddress by rememberSaveable { mutableStateOf("") }
-    var equipmentName by rememberSaveable { mutableStateOf("") }
-    var model by rememberSaveable { mutableStateOf("") }
-    var serialNumber by rememberSaveable { mutableStateOf("") }
-    var operatingTime by rememberSaveable { mutableStateOf("") }
-    var completeness by rememberSaveable { mutableStateOf("") }
-    var externalCondition by rememberSaveable { mutableStateOf("") }
-    var malfunctionDescription by rememberSaveable { mutableStateOf("") }
+    val today = remember { currentDateDisplay() }
+    val requestDatePart = remember { currentDateForRequestNumber() }
+    val nextSequence = remember(existingActs) { ActStorage.nextSequence(existingActs) }
+
+    var equipmentCode by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.equipmentCode.orEmpty())
+    }
+    var equipmentName by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.equipmentName.orEmpty())
+    }
+    var date by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.date?.ifBlank { today } ?: today)
+    }
+    var customer by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.customer.orEmpty())
+    }
+    var customerAddress by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.customerAddress.orEmpty())
+    }
+    var brandSelection by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.brand.orEmpty())
+    }
+    var customBrand by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var modelSelection by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.model.orEmpty())
+    }
+    var customModel by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var serialNumber by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.serialNumber.orEmpty())
+    }
+    var operatingTime by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.operatingTime.orEmpty())
+    }
+    var completeness by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.completeness.orEmpty())
+    }
+    var externalCondition by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.externalCondition.orEmpty())
+    }
+    var malfunctionDescription by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.malfunctionDescription.orEmpty())
+    }
+
+    val brandOptions = remember(equipmentCode) {
+        if (equipmentCode.isBlank()) emptyList() else EquipmentCatalog.brandOptions(equipmentCode)
+    }
+    val selectedEquipment = remember(equipmentCode) { EquipmentCatalog.findEquipment(equipmentCode) }
+    val isExistingBrandCustom = existingAct != null &&
+        existingAct.brand.isNotBlank() &&
+        existingAct.brand !in EquipmentCatalog.brandOptions(existingAct.equipmentCode)
+    val isExistingModelCustom = existingAct != null &&
+        existingAct.model.isNotBlank() &&
+        existingAct.model !in EquipmentCatalog.modelOptions(existingAct.equipmentCode, existingAct.brand)
+
+    LaunchedEffect(existingAct?.id) {
+        if (existingAct != null && customBrand.isBlank() && isExistingBrandCustom) {
+            customBrand = existingAct.brand
+            brandSelection = EquipmentCatalog.OTHER_OPTION
+        }
+        if (existingAct != null && customModel.isBlank() && isExistingModelCustom) {
+            customModel = existingAct.model
+            modelSelection = EquipmentCatalog.OTHER_OPTION
+        }
+    }
+
+    LaunchedEffect(equipmentCode, selectedEquipment?.name) {
+        if (equipmentCode.isNotBlank() && equipmentName != selectedEquipment?.name) {
+            equipmentName = selectedEquipment?.name.orEmpty()
+        }
+    }
+
+    LaunchedEffect(equipmentCode, brandSelection, brandOptions) {
+        if (equipmentCode.isNotBlank() && brandSelection.isNotBlank() &&
+            brandSelection != EquipmentCatalog.OTHER_OPTION && brandSelection !in brandOptions
+        ) {
+            brandSelection = ""
+            modelSelection = ""
+            customBrand = ""
+            customModel = ""
+        }
+    }
+
+    val modelOptions = remember(equipmentCode, brandSelection) {
+        when {
+            equipmentCode.isBlank() -> emptyList()
+            brandSelection.isBlank() -> listOf(EquipmentCatalog.OTHER_OPTION)
+            brandSelection == EquipmentCatalog.OTHER_OPTION -> listOf(EquipmentCatalog.OTHER_OPTION)
+            else -> EquipmentCatalog.modelOptions(equipmentCode, brandSelection)
+        }
+    }
+
+    LaunchedEffect(brandSelection, modelSelection, modelOptions) {
+        if (brandSelection != EquipmentCatalog.OTHER_OPTION &&
+            modelSelection.isNotBlank() &&
+            modelSelection != EquipmentCatalog.OTHER_OPTION &&
+            modelSelection !in modelOptions
+        ) {
+            modelSelection = ""
+            customModel = ""
+        }
+    }
+
+    val requestNumber = remember(existingAct?.requestNumber, equipmentCode, nextSequence, requestDatePart) {
+        existingAct?.requestNumber.orEmpty().ifBlank {
+            if (equipmentCode.isBlank()) "" else "$equipmentCode-$nextSequence-$requestDatePart"
+        }
+    }
+
+    val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
+    val resolvedModel = if (modelSelection == EquipmentCatalog.OTHER_OPTION) customModel else modelSelection
 
     BackHandler(onBack = onBackClick)
 
@@ -256,7 +383,11 @@ fun NewActScreen(
                 title = {
                     Column {
                         Text(
-                            text = stringResource(id = R.string.new_act_screen_title),
+                            text = if (existingAct == null) {
+                                stringResource(id = R.string.new_act_screen_title)
+                            } else {
+                                stringResource(id = R.string.edit_act_screen_title)
+                            },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -312,9 +443,10 @@ fun NewActScreen(
 
                     FormTextField(
                         value = requestNumber,
-                        onValueChange = { requestNumber = it },
+                        onValueChange = {},
                         label = stringResource(id = R.string.field_request_number),
-                        placeholder = stringResource(id = R.string.field_request_number_placeholder)
+                        placeholder = stringResource(id = R.string.field_request_number_placeholder),
+                        readOnly = true
                     )
                     FormTextField(
                         value = date,
@@ -335,18 +467,70 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_customer_address_placeholder),
                         minLines = 2
                     )
+                    DropdownField(
+                        value = selectedEquipment?.displayName.orEmpty(),
+                        options = EquipmentCatalog.equipmentTypes.map { it.displayName },
+                        label = stringResource(id = R.string.field_equipment_code),
+                        placeholder = stringResource(id = R.string.field_equipment_code_placeholder),
+                        onOptionSelected = { selectedDisplayName ->
+                            val equipment = EquipmentCatalog.equipmentTypes.firstOrNull {
+                                it.displayName == selectedDisplayName
+                            } ?: return@DropdownField
+                            equipmentCode = equipment.code
+                            equipmentName = equipment.name
+                            brandSelection = ""
+                            modelSelection = ""
+                            customBrand = ""
+                            customModel = ""
+                        }
+                    )
                     FormTextField(
                         value = equipmentName,
-                        onValueChange = { equipmentName = it },
+                        onValueChange = {},
                         label = stringResource(id = R.string.field_equipment_name),
-                        placeholder = stringResource(id = R.string.field_equipment_name_placeholder)
+                        placeholder = stringResource(id = R.string.field_equipment_name_placeholder),
+                        readOnly = true
                     )
-                    FormTextField(
-                        value = model,
-                        onValueChange = { model = it },
+                    DropdownField(
+                        value = brandSelection,
+                        options = brandOptions,
+                        label = stringResource(id = R.string.field_brand),
+                        placeholder = stringResource(id = R.string.field_brand_placeholder),
+                        enabled = equipmentCode.isNotBlank(),
+                        onOptionSelected = { selectedBrand ->
+                            brandSelection = selectedBrand
+                            modelSelection = ""
+                            customBrand = if (selectedBrand == EquipmentCatalog.OTHER_OPTION) customBrand else ""
+                            customModel = ""
+                        }
+                    )
+                    if (brandSelection == EquipmentCatalog.OTHER_OPTION) {
+                        FormTextField(
+                            value = customBrand,
+                            onValueChange = { customBrand = it },
+                            label = stringResource(id = R.string.field_custom_brand),
+                            placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
+                        )
+                    }
+                    DropdownField(
+                        value = modelSelection,
+                        options = modelOptions,
                         label = stringResource(id = R.string.field_model),
-                        placeholder = stringResource(id = R.string.field_model_placeholder)
+                        placeholder = stringResource(id = R.string.field_model_placeholder),
+                        enabled = equipmentCode.isNotBlank(),
+                        onOptionSelected = { selectedModel ->
+                            modelSelection = selectedModel
+                            customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
+                        }
                     )
+                    if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
+                        FormTextField(
+                            value = customModel,
+                            onValueChange = { customModel = it },
+                            label = stringResource(id = R.string.field_custom_model),
+                            placeholder = stringResource(id = R.string.field_custom_model_placeholder)
+                        )
+                    }
                     FormTextField(
                         value = serialNumber,
                         onValueChange = { serialNumber = it },
@@ -357,7 +541,8 @@ fun NewActScreen(
                         value = operatingTime,
                         onValueChange = { operatingTime = it },
                         label = stringResource(id = R.string.field_operating_time),
-                        placeholder = stringResource(id = R.string.field_operating_time_placeholder)
+                        placeholder = stringResource(id = R.string.field_operating_time_placeholder),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                     )
                     FormTextField(
                         value = completeness,
@@ -387,17 +572,17 @@ fun NewActScreen(
                 Button(
                     onClick = {
                         val act = ActRecord(
-                            id = System.currentTimeMillis(),
-                            requestNumber = requestNumber.ifBlank {
-                                context.getString(R.string.default_request_number)
-                            },
+                            id = existingAct?.id ?: System.currentTimeMillis(),
+                            requestNumber = requestNumber,
                             date = date.ifBlank { context.getString(R.string.default_date_value) },
                             customer = customer.ifBlank {
                                 context.getString(R.string.default_customer_value)
                             },
                             customerAddress = customerAddress,
+                            equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
-                            model = model,
+                            brand = resolvedBrand,
+                            model = resolvedModel,
                             serialNumber = serialNumber,
                             operatingTime = operatingTime,
                             completeness = completeness,
@@ -407,7 +592,11 @@ fun NewActScreen(
                         onSaveClick(act)
                         Toast.makeText(
                             context,
-                            context.getString(R.string.save_success_message),
+                            if (existingAct == null) {
+                                context.getString(R.string.save_success_message)
+                            } else {
+                                context.getString(R.string.update_success_message)
+                            },
                             Toast.LENGTH_SHORT
                         ).show()
                     },
@@ -439,6 +628,7 @@ fun ActsListScreen(
     onBackClick: () -> Unit = {},
     onActClick: (ActRecord) -> Unit = {}
 ) {
+    val context = LocalContext.current
     BackHandler(onBack = onBackClick)
 
     Scaffold(
@@ -521,19 +711,30 @@ fun ActsListScreen(
                             modifier = Modifier.padding(18.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            val listRequestNumber = act.requestNumber.ifBlank {
+                                context.getString(R.string.default_request_number)
+                            }
                             Text(
-                                text = act.requestNumber,
+                                text = listRequestNumber,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
+                            )
+                            InfoLine(
+                                title = stringResource(id = R.string.field_date),
+                                value = act.date
                             )
                             InfoLine(
                                 title = stringResource(id = R.string.field_customer),
                                 value = act.customer
                             )
                             InfoLine(
-                                title = stringResource(id = R.string.field_date),
-                                value = act.date
+                                title = stringResource(id = R.string.field_equipment_code),
+                                value = act.equipmentCode
+                            )
+                            InfoLine(
+                                title = stringResource(id = R.string.field_equipment_name),
+                                value = act.equipmentName
                             )
                         }
                     }
@@ -547,8 +748,10 @@ fun ActsListScreen(
 @Composable
 fun ActDetailsScreen(
     act: ActRecord,
-    onBackClick: () -> Unit = {}
+    onBackClick: () -> Unit = {},
+    onEditClick: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     BackHandler(onBack = onBackClick)
 
     Scaffold(
@@ -561,8 +764,11 @@ fun ActDetailsScreen(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
+                        val detailsRequestNumber = act.requestNumber.ifBlank {
+                            context.getString(R.string.default_request_number)
+                        }
                         Text(
-                            text = act.requestNumber,
+                            text = detailsRequestNumber,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -571,6 +777,11 @@ fun ActDetailsScreen(
                 navigationIcon = {
                     TextButton(onClick = onBackClick) {
                         Text(text = stringResource(id = R.string.back_button))
+                    }
+                },
+                actions = {
+                    TextButton(onClick = onEditClick) {
+                        Text(text = stringResource(id = R.string.edit_button))
                     }
                 }
             )
@@ -598,7 +809,9 @@ fun ActDetailsScreen(
             DetailCard(
                 title = stringResource(id = R.string.act_equipment_info_title),
                 content = {
+                    InfoLine(stringResource(id = R.string.field_equipment_code), act.equipmentCode)
                     InfoLine(stringResource(id = R.string.field_equipment_name), act.equipmentName)
+                    InfoLine(stringResource(id = R.string.field_brand), act.brand)
                     InfoLine(stringResource(id = R.string.field_model), act.model)
                     InfoLine(stringResource(id = R.string.field_serial_number), act.serialNumber)
                     InfoLine(stringResource(id = R.string.field_operating_time), act.operatingTime)
@@ -674,7 +887,9 @@ private fun FormTextField(
     onValueChange: (String) -> Unit,
     label: String,
     placeholder: String,
-    minLines: Int = 1
+    minLines: Int = 1,
+    readOnly: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     OutlinedTextField(
         value = value,
@@ -684,9 +899,69 @@ private fun FormTextField(
         placeholder = { Text(text = placeholder) },
         shape = RoundedCornerShape(18.dp),
         minLines = minLines,
-        singleLine = minLines == 1
+        singleLine = minLines == 1,
+        readOnly = readOnly,
+        keyboardOptions = keyboardOptions
     )
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DropdownField(
+    value: String,
+    options: List<String>,
+    label: String,
+    placeholder: String,
+    enabled: Boolean = true,
+    onOptionSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = {
+            if (enabled && options.isNotEmpty()) {
+                expanded = !expanded
+            }
+        }
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+            label = { Text(text = label) },
+            placeholder = { Text(text = placeholder) },
+            readOnly = true,
+            enabled = enabled,
+            shape = RoundedCornerShape(18.dp),
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            }
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onOptionSelected(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+private fun currentDateDisplay(): String =
+    SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date())
+
+private fun currentDateForRequestNumber(): String =
+    SimpleDateFormat("ddMMyy", Locale.getDefault()).format(Date())
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
@@ -712,12 +987,14 @@ private fun ActsListScreenPreview() {
             acts = listOf(
                 ActRecord(
                     id = 1L,
-                    requestNumber = "2026-015",
-                    date = "22.03.2026",
+                    requestNumber = "DGU-18-230326",
+                    date = "23.03.2026",
                     customer = "ООО «Энерго Сервис»",
                     customerAddress = "г. Москва, ул. Центральная, д. 10",
-                    equipmentName = "ДГУ 100 кВт",
-                    model = "DG-100",
+                    equipmentCode = "DGU",
+                    equipmentName = "дизельный генератор",
+                    brand = "FG Wilson",
+                    model = "P110-3",
                     serialNumber = "SN-12345",
                     operatingTime = "1450 моточасов",
                     completeness = "Базовая комплектация",

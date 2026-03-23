@@ -35,5 +35,17 @@
     <string name="field_malfunction_description">Описание неисправности</string>
     <string name="field_malfunction_description_placeholder">Подробно опишите выявленную неисправность</string>
     <string name="save_button">Сохранить</string>
-    <string name="save_placeholder_message">Сохранение будет подключено на следующем этапе</string>
+    <string name="save_success_message">Акт сохранён локально</string>
+    <string name="default_request_number">Без номера</string>
+    <string name="default_date_value">Дата не указана</string>
+    <string name="default_customer_value">Заказчик не указан</string>
+    <string name="acts_list_screen_title">Список актов</string>
+    <string name="acts_list_screen_subtitle">Локально сохранённые документы</string>
+    <string name="empty_list_title">Сохранённых актов пока нет</string>
+    <string name="empty_list_text">Создайте новый акт, сохраните его и он появится в этом списке даже после перезапуска приложения.</string>
+    <string name="act_details_title">Просмотр акта</string>
+    <string name="act_main_info_title">Основные сведения</string>
+    <string name="act_equipment_info_title">Оборудование</string>
+    <string name="act_diagnostic_info_title">Диагностика</string>
+    <string name="not_filled_value">Не заполнено</string>
 </resources>

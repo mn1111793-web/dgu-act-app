@@ -14,10 +14,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -219,128 +220,139 @@ fun NewActScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .imePadding()
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = innerPadding.calculateTopPadding() + 12.dp,
+                end = 16.dp,
+                bottom = innerPadding.calculateBottomPadding() + 20.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 18.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text(
-                    text = stringResource(id = R.string.form_intro_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = stringResource(id = R.string.form_intro_text),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 18.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.form_intro_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(id = R.string.form_intro_text),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
-                FormTextField(
-                    value = requestNumber,
-                    onValueChange = { requestNumber = it },
-                    label = stringResource(id = R.string.field_request_number),
-                    placeholder = stringResource(id = R.string.field_request_number_placeholder)
-                )
-                FormTextField(
-                    value = date,
-                    onValueChange = { date = it },
-                    label = stringResource(id = R.string.field_date),
-                    placeholder = stringResource(id = R.string.field_date_placeholder)
-                )
-                FormTextField(
-                    value = customer,
-                    onValueChange = { customer = it },
-                    label = stringResource(id = R.string.field_customer),
-                    placeholder = stringResource(id = R.string.field_customer_placeholder)
-                )
-                FormTextField(
-                    value = customerAddress,
-                    onValueChange = { customerAddress = it },
-                    label = stringResource(id = R.string.field_customer_address),
-                    placeholder = stringResource(id = R.string.field_customer_address_placeholder),
-                    minLines = 2
-                )
-                FormTextField(
-                    value = equipmentName,
-                    onValueChange = { equipmentName = it },
-                    label = stringResource(id = R.string.field_equipment_name),
-                    placeholder = stringResource(id = R.string.field_equipment_name_placeholder)
-                )
-                FormTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    label = stringResource(id = R.string.field_model),
-                    placeholder = stringResource(id = R.string.field_model_placeholder)
-                )
-                FormTextField(
-                    value = serialNumber,
-                    onValueChange = { serialNumber = it },
-                    label = stringResource(id = R.string.field_serial_number),
-                    placeholder = stringResource(id = R.string.field_serial_number_placeholder)
-                )
-                FormTextField(
-                    value = operatingTime,
-                    onValueChange = { operatingTime = it },
-                    label = stringResource(id = R.string.field_operating_time),
-                    placeholder = stringResource(id = R.string.field_operating_time_placeholder)
-                )
-                FormTextField(
-                    value = completeness,
-                    onValueChange = { completeness = it },
-                    label = stringResource(id = R.string.field_completeness),
-                    placeholder = stringResource(id = R.string.field_completeness_placeholder),
-                    minLines = 2
-                )
-                FormTextField(
-                    value = externalCondition,
-                    onValueChange = { externalCondition = it },
-                    label = stringResource(id = R.string.field_external_condition),
-                    placeholder = stringResource(id = R.string.field_external_condition_placeholder),
-                    minLines = 2
-                )
-                FormTextField(
-                    value = malfunctionDescription,
-                    onValueChange = { malfunctionDescription = it },
-                    label = stringResource(id = R.string.field_malfunction_description),
-                    placeholder = stringResource(id = R.string.field_malfunction_description_placeholder),
-                    minLines = 4
-                )
+                    FormTextField(
+                        value = requestNumber,
+                        onValueChange = { requestNumber = it },
+                        label = stringResource(id = R.string.field_request_number),
+                        placeholder = stringResource(id = R.string.field_request_number_placeholder)
+                    )
+                    FormTextField(
+                        value = date,
+                        onValueChange = { date = it },
+                        label = stringResource(id = R.string.field_date),
+                        placeholder = stringResource(id = R.string.field_date_placeholder)
+                    )
+                    FormTextField(
+                        value = customer,
+                        onValueChange = { customer = it },
+                        label = stringResource(id = R.string.field_customer),
+                        placeholder = stringResource(id = R.string.field_customer_placeholder)
+                    )
+                    FormTextField(
+                        value = customerAddress,
+                        onValueChange = { customerAddress = it },
+                        label = stringResource(id = R.string.field_customer_address),
+                        placeholder = stringResource(id = R.string.field_customer_address_placeholder),
+                        minLines = 2
+                    )
+                    FormTextField(
+                        value = equipmentName,
+                        onValueChange = { equipmentName = it },
+                        label = stringResource(id = R.string.field_equipment_name),
+                        placeholder = stringResource(id = R.string.field_equipment_name_placeholder)
+                    )
+                    FormTextField(
+                        value = model,
+                        onValueChange = { model = it },
+                        label = stringResource(id = R.string.field_model),
+                        placeholder = stringResource(id = R.string.field_model_placeholder)
+                    )
+                    FormTextField(
+                        value = serialNumber,
+                        onValueChange = { serialNumber = it },
+                        label = stringResource(id = R.string.field_serial_number),
+                        placeholder = stringResource(id = R.string.field_serial_number_placeholder)
+                    )
+                    FormTextField(
+                        value = operatingTime,
+                        onValueChange = { operatingTime = it },
+                        label = stringResource(id = R.string.field_operating_time),
+                        placeholder = stringResource(id = R.string.field_operating_time_placeholder)
+                    )
+                    FormTextField(
+                        value = completeness,
+                        onValueChange = { completeness = it },
+                        label = stringResource(id = R.string.field_completeness),
+                        placeholder = stringResource(id = R.string.field_completeness_placeholder),
+                        minLines = 2
+                    )
+                    FormTextField(
+                        value = externalCondition,
+                        onValueChange = { externalCondition = it },
+                        label = stringResource(id = R.string.field_external_condition),
+                        placeholder = stringResource(id = R.string.field_external_condition_placeholder),
+                        minLines = 2
+                    )
+                    FormTextField(
+                        value = malfunctionDescription,
+                        onValueChange = { malfunctionDescription = it },
+                        label = stringResource(id = R.string.field_malfunction_description),
+                        placeholder = stringResource(id = R.string.field_malfunction_description_placeholder),
+                        minLines = 4
+                    )
+                }
             }
 
-            Button(
-                onClick = {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.save_placeholder_message),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(20.dp),
-                contentPadding = PaddingValues(vertical = 12.dp)
-            ) {
-                Text(
-                    text = stringResource(id = R.string.save_button),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+            item {
+                Button(
+                    onClick = {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.save_placeholder_message),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.save_button),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }

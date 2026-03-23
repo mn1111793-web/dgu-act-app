@@ -23,7 +23,8 @@ data class ActRecord(
     val checklistItems: List<ChecklistItemState> = emptyList(),
     val preliminaryConclusion: String = "",
     val rootCause: String = "",
-    val requiredWorks: String = ""
+    val requiredWorks: String = "",
+    val photos: List<ActPhoto> = emptyList()
 )
 
 object ActStorage {
@@ -92,6 +93,19 @@ object ActStorage {
         put("rootCause", rootCause)
         put("requiredWorks", requiredWorks)
         put(
+            "photos",
+            JSONArray().apply {
+                photos.forEach { photo ->
+                    put(
+                        JSONObject().apply {
+                            put("id", photo.id)
+                            put("filePath", photo.filePath)
+                        }
+                    )
+                }
+            }
+        )
+        put(
             "checklistItems",
             JSONArray().apply {
                 checklistItems.forEach { item ->
@@ -130,6 +144,25 @@ object ActStorage {
             }
             .orEmpty()
 
+        val photos = optJSONArray("photos")
+            ?.let { jsonArray ->
+                buildList {
+                    for (index in 0 until jsonArray.length()) {
+                        val item = jsonArray.optJSONObject(index) ?: continue
+                        val filePath = item.optString("filePath")
+                        if (filePath.isNotBlank()) {
+                            add(
+                                ActPhoto(
+                                    id = item.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+                                    filePath = filePath
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            .orEmpty()
+
         val legacyRecord = ActRecord(
             id = optLong("id"),
             requestNumber = optString("requestNumber"),
@@ -158,7 +191,8 @@ object ActStorage {
                 DiagnosticChecklistCatalog.primaryConclusionFromLegacy(legacyRecord)
             },
             rootCause = optString("rootCause"),
-            requiredWorks = optString("requiredWorks")
+            requiredWorks = optString("requiredWorks"),
+            photos = photos
         )
     }
 }

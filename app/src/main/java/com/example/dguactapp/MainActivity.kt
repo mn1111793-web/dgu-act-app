@@ -31,9 +31,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,13 +45,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,7 +96,7 @@ class MainActivity : ComponentActivity() {
 private fun DguActApp() {
     val context = LocalContext.current
     val savedActs = remember {
-        mutableStateListOf<ActRecord>().apply {
+        androidx.compose.runtime.mutableStateListOf<ActRecord>().apply {
             addAll(ActStorage.loadActs(context))
         }
     }
@@ -227,7 +229,7 @@ fun StartScreen(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             OutlinedButton(
                 onClick = onActsListClick,
                 modifier = Modifier
@@ -297,14 +299,28 @@ fun NewActScreen(
     var operatingTime by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.operatingTime.orEmpty())
     }
-    var completeness by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.completeness.orEmpty())
+    var diagnosisType by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.diagnosisType ?: DiagnosisType.Primary)
     }
-    var externalCondition by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.externalCondition.orEmpty())
+    val checklistItems = rememberSaveable(existingAct?.id, saver = ChecklistStateSaver) {
+        DiagnosticChecklistCatalog.stateFor(
+            type = diagnosisType,
+            savedItems = existingAct?.checklistItems.orEmpty(),
+            legacyAct = existingAct
+        ).toMutableStateList()
     }
-    var malfunctionDescription by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.malfunctionDescription.orEmpty())
+    var preliminaryConclusion by rememberSaveable(existingAct?.id) {
+        mutableStateOf(
+            existingAct?.preliminaryConclusion?.ifBlank {
+                DiagnosticChecklistCatalog.primaryConclusionFromLegacy(existingAct)
+            }.orEmpty()
+        )
+    }
+    var rootCause by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.rootCause.orEmpty())
+    }
+    var requiredWorks by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.requiredWorks.orEmpty())
     }
 
     val brandOptions = remember(equipmentCode) {
@@ -544,33 +560,89 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_operating_time_placeholder),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                     )
-                    FormTextField(
-                        value = completeness,
-                        onValueChange = { completeness = it },
-                        label = stringResource(id = R.string.field_completeness),
-                        placeholder = stringResource(id = R.string.field_completeness_placeholder),
-                        minLines = 2
+                }
+            }
+
+            item {
+                DetailCard(title = stringResource(id = R.string.diagnosis_type_title)) {
+                    Text(
+                        text = stringResource(id = R.string.diagnosis_type_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    FormTextField(
-                        value = externalCondition,
-                        onValueChange = { externalCondition = it },
-                        label = stringResource(id = R.string.field_external_condition),
-                        placeholder = stringResource(id = R.string.field_external_condition_placeholder),
-                        minLines = 2
+                    Spacer(modifier = Modifier.height(12.dp))
+                    DiagnosisTypeSelector(
+                        selectedType = diagnosisType,
+                        onTypeSelected = { selectedType ->
+                            if (selectedType == diagnosisType) return@DiagnosisTypeSelector
+                            diagnosisType = selectedType
+                            checklistItems.replaceWith(
+                                DiagnosticChecklistCatalog.stateFor(
+                                    type = selectedType,
+                                    savedItems = checklistItems.toList(),
+                                    legacyAct = existingAct
+                                )
+                            )
+                        }
                     )
+                }
+            }
+
+            items(DiagnosticChecklistCatalog.sectionsFor(diagnosisType), key = { it.title }) { section ->
+                ChecklistSectionEditor(
+                    section = section,
+                    items = checklistItems,
+                    onItemChange = { updatedItem ->
+                        val index = checklistItems.indexOfFirst { it.key == updatedItem.key }
+                        if (index >= 0) {
+                            checklistItems[index] = updatedItem
+                        }
+                    }
+                )
+            }
+
+            item {
+                DetailCard(title = stringResource(id = R.string.preliminary_conclusion_title)) {
                     FormTextField(
-                        value = malfunctionDescription,
-                        onValueChange = { malfunctionDescription = it },
-                        label = stringResource(id = R.string.field_malfunction_description),
-                        placeholder = stringResource(id = R.string.field_malfunction_description_placeholder),
-                        minLines = 4
+                        value = preliminaryConclusion,
+                        onValueChange = { preliminaryConclusion = it },
+                        label = stringResource(id = R.string.preliminary_conclusion_title),
+                        placeholder = stringResource(id = R.string.preliminary_conclusion_placeholder),
+                        minLines = 3
                     )
+                }
+            }
+
+            if (diagnosisType == DiagnosisType.Advanced) {
+                item {
+                    DetailCard(title = stringResource(id = R.string.advanced_result_title)) {
+                        FormTextField(
+                            value = rootCause,
+                            onValueChange = { rootCause = it },
+                            label = stringResource(id = R.string.root_cause_title),
+                            placeholder = stringResource(id = R.string.root_cause_placeholder),
+                            minLines = 3
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        FormTextField(
+                            value = requiredWorks,
+                            onValueChange = { requiredWorks = it },
+                            label = stringResource(id = R.string.required_works_title),
+                            placeholder = stringResource(id = R.string.required_works_placeholder),
+                            minLines = 3
+                        )
+                    }
                 }
             }
 
             item {
                 Button(
                     onClick = {
+                        val completenessSummary = checklistItems.findCommentByKey("visual_completeness")
+                        val externalConditionSummary = listOf(
+                            checklistItems.findCommentByKey("visual_casing_condition"),
+                            checklistItems.findCommentByKey("visual_damage_traces")
+                        ).filter { it.isNotBlank() }.joinToString("; ")
                         val act = ActRecord(
                             id = existingAct?.id ?: System.currentTimeMillis(),
                             requestNumber = requestNumber,
@@ -585,9 +657,14 @@ fun NewActScreen(
                             model = resolvedModel,
                             serialNumber = serialNumber,
                             operatingTime = operatingTime,
-                            completeness = completeness,
-                            externalCondition = externalCondition,
-                            malfunctionDescription = malfunctionDescription
+                            completeness = completenessSummary,
+                            externalCondition = externalConditionSummary,
+                            malfunctionDescription = preliminaryConclusion,
+                            diagnosisType = diagnosisType,
+                            checklistItems = checklistItems.toList(),
+                            preliminaryConclusion = preliminaryConclusion,
+                            rootCause = if (diagnosisType == DiagnosisType.Advanced) rootCause else "",
+                            requiredWorks = if (diagnosisType == DiagnosisType.Advanced) requiredWorks else ""
                         )
                         onSaveClick(act)
                         Toast.makeText(
@@ -617,6 +694,72 @@ fun NewActScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosisTypeSelector(
+    selectedType: DiagnosisType,
+    onTypeSelected: (DiagnosisType) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        DiagnosisType.values().forEach { type ->
+            val isSelected = type == selectedType
+            OutlinedButton(
+                onClick = { onTypeSelected(type) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (isSelected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    }
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outline
+                    }
+                ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                Text(
+                    text = type.title,
+                    textAlign = TextAlign.Center,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChecklistSectionEditor(
+    section: ChecklistSectionDefinition,
+    items: List<ChecklistItemState>,
+    onItemChange: (ChecklistItemState) -> Unit
+) {
+    val sectionItems = section.items.mapNotNull { definition ->
+        items.firstOrNull { it.key == definition.key }
+    }
+
+    DetailCard(title = section.title) {
+        ChecklistTableHeader()
+        sectionItems.forEachIndexed { index, item ->
+            if (index > 0) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+            ChecklistEditableRow(
+                item = item,
+                onItemChange = onItemChange
+            )
         }
     }
 }
@@ -736,6 +879,10 @@ fun ActsListScreen(
                                 title = stringResource(id = R.string.field_equipment_name),
                                 value = act.equipmentName
                             )
+                            InfoLine(
+                                title = stringResource(id = R.string.diagnosis_type_title),
+                                value = act.diagnosisType.title
+                            )
                         }
                     }
                 }
@@ -820,12 +967,35 @@ fun ActDetailsScreen(
             DetailCard(
                 title = stringResource(id = R.string.act_diagnostic_info_title),
                 content = {
-                    InfoLine(stringResource(id = R.string.field_completeness), act.completeness)
-                    InfoLine(stringResource(id = R.string.field_external_condition), act.externalCondition)
+                    InfoLine(stringResource(id = R.string.diagnosis_type_title), act.diagnosisType.title)
+                    DiagnosticChecklistCatalog.sectionsFor(act.diagnosisType).forEach { section ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = section.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ChecklistTableHeader()
+                        section.items.mapNotNull { definition ->
+                            act.checklistItems.firstOrNull { it.key == definition.key }
+                        }.forEachIndexed { index, item ->
+                            if (index > 0) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            }
+                            ChecklistReadonlyRow(item = item)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                     InfoLine(
-                        stringResource(id = R.string.field_malfunction_description),
-                        act.malfunctionDescription
+                        stringResource(id = R.string.preliminary_conclusion_title),
+                        act.preliminaryConclusion
                     )
+                    if (act.diagnosisType == DiagnosisType.Advanced) {
+                        InfoLine(stringResource(id = R.string.root_cause_title), act.rootCause)
+                        InfoLine(stringResource(id = R.string.required_works_title), act.requiredWorks)
+                    }
                 }
             )
         }
@@ -853,6 +1023,134 @@ private fun DetailCard(
             )
             content()
         }
+    }
+}
+
+@Composable
+private fun ChecklistTableHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = stringResource(id = R.string.checklist_column_item),
+            modifier = Modifier.weight(1.4f),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = stringResource(id = R.string.checklist_column_checked),
+            modifier = Modifier.weight(0.6f),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = stringResource(id = R.string.checklist_column_faulty),
+            modifier = Modifier.weight(0.85f),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = stringResource(id = R.string.checklist_column_comment),
+            modifier = Modifier.weight(1.4f),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun ChecklistEditableRow(
+    item: ChecklistItemState,
+    onItemChange: (ChecklistItemState) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = item.title,
+            modifier = Modifier.weight(1.4f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Box(
+            modifier = Modifier.weight(0.6f),
+            contentAlignment = Alignment.Center
+        ) {
+            Checkbox(
+                checked = item.checked,
+                onCheckedChange = { onItemChange(item.copy(checked = it)) }
+            )
+        }
+        Box(
+            modifier = Modifier.weight(0.85f),
+            contentAlignment = Alignment.Center
+        ) {
+            Checkbox(
+                checked = item.faulty,
+                onCheckedChange = { onItemChange(item.copy(faulty = it)) }
+            )
+        }
+        OutlinedTextField(
+            value = item.comment,
+            onValueChange = { onItemChange(item.copy(comment = it)) },
+            modifier = Modifier.weight(1.4f),
+            placeholder = { Text(text = stringResource(id = R.string.checklist_comment_placeholder)) },
+            shape = RoundedCornerShape(14.dp),
+            singleLine = false,
+            minLines = 2
+        )
+    }
+}
+
+@Composable
+private fun ChecklistReadonlyRow(item: ChecklistItemState) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = item.title,
+            modifier = Modifier.weight(1.4f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = if (item.checked) "Да" else "—",
+            modifier = Modifier.weight(0.6f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = if (item.faulty) "Да" else "—",
+            modifier = Modifier.weight(0.85f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = item.comment.ifBlank { stringResource(id = R.string.not_filled_value) },
+            modifier = Modifier.weight(1.4f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1009,6 +1307,9 @@ private fun DropdownField(
     }
 }
 
+private fun List<ChecklistItemState>.findCommentByKey(key: String): String =
+    firstOrNull { it.key == key }?.comment.orEmpty()
+
 private fun currentDateDisplay(): String =
     SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date())
 
@@ -1027,7 +1328,36 @@ private fun StartScreenPreview() {
 @Composable
 private fun NewActScreenPreview() {
     DguActAppTheme(darkTheme = false) {
-        NewActScreen()
+        NewActScreen(
+            existingAct = ActRecord(
+                id = 1L,
+                requestNumber = "DGU-18-230326",
+                date = "23.03.2026",
+                customer = "ООО «Энерго Сервис»",
+                customerAddress = "г. Москва, ул. Центральная, д. 10",
+                equipmentCode = "DGU",
+                equipmentName = "дизельный генератор",
+                brand = "FG Wilson",
+                model = "P110-3",
+                serialNumber = "SN-12345",
+                operatingTime = "1450 моточасов",
+                completeness = "Комплект в норме",
+                externalCondition = "Без серьёзных повреждений",
+                malfunctionDescription = "Требуется диагностика системы запуска",
+                diagnosisType = DiagnosisType.Advanced,
+                checklistItems = DiagnosticChecklistCatalog.stateFor(DiagnosisType.Advanced).map { item ->
+                    when (item.key) {
+                        "visual_external_inspection" -> item.copy(checked = true)
+                        "startup_error_indication" -> item.copy(checked = true, faulty = true, comment = "Горит аварийный индикатор")
+                        "advanced_measurements" -> item.copy(checked = true, comment = "Напряжение занижено")
+                        else -> item
+                    }
+                },
+                preliminaryConclusion = "Неисправность подтверждена, требуется разборка стартера.",
+                rootCause = "Короткое замыкание в цепи управления стартером.",
+                requiredWorks = "Замена стартера, ревизия проводки и контрольный запуск."
+            )
+        )
     }
 }
 
@@ -1051,7 +1381,10 @@ private fun ActsListScreenPreview() {
                     operatingTime = "1450 моточасов",
                     completeness = "Базовая комплектация",
                     externalCondition = "Без серьёзных повреждений",
-                    malfunctionDescription = "Требуется диагностика системы запуска"
+                    malfunctionDescription = "Требуется диагностика системы запуска",
+                    diagnosisType = DiagnosisType.Primary,
+                    checklistItems = DiagnosticChecklistCatalog.stateFor(DiagnosisType.Primary),
+                    preliminaryConclusion = "Требуется первичная диагностика"
                 )
             )
         )

@@ -18,7 +18,12 @@ data class ActRecord(
     val operatingTime: String,
     val completeness: String,
     val externalCondition: String,
-    val malfunctionDescription: String
+    val malfunctionDescription: String,
+    val diagnosisType: DiagnosisType = DiagnosisType.Primary,
+    val checklistItems: List<ChecklistItemState> = emptyList(),
+    val preliminaryConclusion: String = "",
+    val rootCause: String = "",
+    val requiredWorks: String = ""
 )
 
 object ActStorage {
@@ -82,22 +87,78 @@ object ActStorage {
         put("completeness", completeness)
         put("externalCondition", externalCondition)
         put("malfunctionDescription", malfunctionDescription)
+        put("diagnosisType", diagnosisType.storageValue)
+        put("preliminaryConclusion", preliminaryConclusion)
+        put("rootCause", rootCause)
+        put("requiredWorks", requiredWorks)
+        put(
+            "checklistItems",
+            JSONArray().apply {
+                checklistItems.forEach { item ->
+                    put(
+                        JSONObject().apply {
+                            put("key", item.key)
+                            put("title", item.title)
+                            put("checked", item.checked)
+                            put("faulty", item.faulty)
+                            put("comment", item.comment)
+                        }
+                    )
+                }
+            }
+        )
     }
 
-    private fun JSONObject.toActRecord(): ActRecord = ActRecord(
-        id = optLong("id"),
-        requestNumber = optString("requestNumber"),
-        date = optString("date"),
-        customer = optString("customer"),
-        customerAddress = optString("customerAddress"),
-        equipmentCode = optString("equipmentCode"),
-        equipmentName = optString("equipmentName"),
-        brand = optString("brand"),
-        model = optString("model"),
-        serialNumber = optString("serialNumber"),
-        operatingTime = optString("operatingTime"),
-        completeness = optString("completeness"),
-        externalCondition = optString("externalCondition"),
-        malfunctionDescription = optString("malfunctionDescription")
-    )
+    private fun JSONObject.toActRecord(): ActRecord {
+        val diagnosisType = DiagnosisType.fromStorageValue(optString("diagnosisType"))
+        val checklistItems = optJSONArray("checklistItems")
+            ?.let { jsonArray ->
+                buildList {
+                    for (index in 0 until jsonArray.length()) {
+                        val item = jsonArray.optJSONObject(index) ?: continue
+                        add(
+                            ChecklistItemState(
+                                key = item.optString("key"),
+                                title = item.optString("title"),
+                                checked = item.optBoolean("checked"),
+                                faulty = item.optBoolean("faulty"),
+                                comment = item.optString("comment")
+                            )
+                        )
+                    }
+                }
+            }
+            .orEmpty()
+
+        val legacyRecord = ActRecord(
+            id = optLong("id"),
+            requestNumber = optString("requestNumber"),
+            date = optString("date"),
+            customer = optString("customer"),
+            customerAddress = optString("customerAddress"),
+            equipmentCode = optString("equipmentCode"),
+            equipmentName = optString("equipmentName"),
+            brand = optString("brand"),
+            model = optString("model"),
+            serialNumber = optString("serialNumber"),
+            operatingTime = optString("operatingTime"),
+            completeness = optString("completeness"),
+            externalCondition = optString("externalCondition"),
+            malfunctionDescription = optString("malfunctionDescription")
+        )
+
+        return legacyRecord.copy(
+            diagnosisType = diagnosisType,
+            checklistItems = DiagnosticChecklistCatalog.stateFor(
+                type = diagnosisType,
+                savedItems = checklistItems,
+                legacyAct = legacyRecord
+            ),
+            preliminaryConclusion = optString("preliminaryConclusion").ifBlank {
+                DiagnosticChecklistCatalog.primaryConclusionFromLegacy(legacyRecord)
+            },
+            rootCause = optString("rootCause"),
+            requiredWorks = optString("requiredWorks")
+        )
+    }
 }

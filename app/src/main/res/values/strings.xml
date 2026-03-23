@@ -59,4 +59,18 @@
     <string name="act_equipment_info_title">Оборудование</string>
     <string name="act_diagnostic_info_title">Диагностика</string>
     <string name="not_filled_value">Не заполнено</string>
+    <string name="diagnosis_type_title">Тип диагностики</string>
+    <string name="diagnosis_type_hint">Выберите режим, чтобы показать нужные блоки чек-листа и текстовые выводы.</string>
+    <string name="preliminary_conclusion_title">Предварительное заключение</string>
+    <string name="preliminary_conclusion_placeholder">Кратко опишите предварительное заключение по результатам первичной проверки</string>
+    <string name="advanced_result_title">Итог углублённой диагностики</string>
+    <string name="root_cause_title">Конкретная причина неисправности</string>
+    <string name="root_cause_placeholder">Опишите точную причину неисправности</string>
+    <string name="required_works_title">Перечень требуемых работ</string>
+    <string name="required_works_placeholder">Укажите необходимые ремонтные и сервисные работы</string>
+    <string name="checklist_column_item">Пункт</string>
+    <string name="checklist_column_checked">Проверено</string>
+    <string name="checklist_column_faulty">Неисправно / замечание</string>
+    <string name="checklist_column_comment">Комментарий</string>
+    <string name="checklist_comment_placeholder">Комментарий</string>
 </resources>

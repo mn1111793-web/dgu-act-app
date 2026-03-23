@@ -29,13 +29,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenu
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.menuAnchor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -906,7 +902,6 @@ private fun FormTextField(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DropdownField(
     value: String,
@@ -918,32 +913,28 @@ private fun DropdownField(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = {
-            if (enabled && options.isNotEmpty()) {
-                expanded = !expanded
-            }
-        }
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = value,
             onValueChange = {},
             modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .clickable(enabled = enabled && options.isNotEmpty()) {
+                    expanded = !expanded
+                },
             label = { Text(text = label) },
             placeholder = { Text(text = placeholder) },
             readOnly = true,
             enabled = enabled,
             shape = RoundedCornerShape(18.dp),
             trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                Text(if (expanded) "▲" else "▼")
             }
         )
-        ExposedDropdownMenu(
+        DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false }
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth()
         ) {
             options.forEach { option ->
                 DropdownMenuItem(

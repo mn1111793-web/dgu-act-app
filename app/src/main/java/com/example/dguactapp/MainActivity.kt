@@ -1153,8 +1153,8 @@ fun ActDetailsScreen(
     var generatedPdfUri by remember(act.id) { mutableStateOf<Uri?>(null) }
     BackHandler(onBack = onBackClick)
 
-    fun generatePdf(): Uri? {
-        val result = ActPdfGenerator.generate(context, act)
+    fun generatePdf(mode: ActPdfGenerator.PdfMode): Uri? {
+        val result = ActPdfGenerator.generate(context, act, mode)
         return result.getOrNull()?.let { file ->
             FileProvider.getUriForFile(
                 context,
@@ -1298,12 +1298,12 @@ fun ActDetailsScreen(
 
             Button(
                 onClick = {
-                    val uri = generatePdf()
+                    val uri = generatePdf(ActPdfGenerator.PdfMode.Filled)
                     if (uri != null) {
                         generatedPdfUri = uri
                         Toast.makeText(
                             context,
-                            context.getString(R.string.pdf_generated_success),
+                            context.getString(R.string.filled_pdf_generated_success),
                             Toast.LENGTH_SHORT
                         ).show()
                     } else {
@@ -1317,12 +1317,36 @@ fun ActDetailsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Text(text = stringResource(id = R.string.generate_pdf_button))
+                Text(text = stringResource(id = R.string.generate_filled_pdf_button))
             }
 
             OutlinedButton(
                 onClick = {
-                    val uri = generatedPdfUri ?: generatePdf()
+                    val uri = generatePdf(ActPdfGenerator.PdfMode.Blank)
+                    if (uri != null) {
+                        generatedPdfUri = uri
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.blank_pdf_generated_success),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.pdf_generated_error),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.generate_blank_pdf_button))
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val uri = generatedPdfUri ?: generatePdf(ActPdfGenerator.PdfMode.Filled)
                     if (uri != null) {
                         generatedPdfUri = uri
                         sharePdf(uri)

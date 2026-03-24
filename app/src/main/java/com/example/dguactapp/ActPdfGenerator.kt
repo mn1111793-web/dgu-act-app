@@ -14,37 +14,58 @@ import java.io.FileOutputStream
 import java.io.IOException
 
 object ActPdfGenerator {
+    enum class PdfMode {
+        Filled,
+        Blank
+    }
+
     private const val pageWidth = 595
     private const val pageHeight = 842
     private const val margin = 36f
-    private const val lineGap = 6f
     private const val blockGap = 12f
 
-    fun generate(context: Context, act: ActRecord): Result<File> = runCatching {
+    private val legalSection = listOf(
+        "3.1. Заказчик подтверждает, что оборудование передано Исполнителю для проведения диагностики.",
+        "3.2. Заказчик согласен на проведение диагностики и её оплату согласно действующему прайс-листу Исполнителя либо согласованной стоимости.",
+        "3.3. Ремонт оборудования выполняется только после дополнительного согласования с Заказчиком объёма работ, сроков и стоимости.",
+        "3.4. В случае отказа Заказчика от ремонта после проведения диагностики, стоимость диагностики подлежит оплате в полном объёме.",
+        "3.5. Работы выполняются в порядке очередности поступления оборудования с учётом производственной загрузки Исполнителя.",
+        "5.1. Стороны договорились, что настоящий Акт может быть подписан собственноручно на бумажном носителе, рукописной подписью на устройстве ввода (планшет, стилус и т.п.) или с использованием одноразового кода, направленного по SMS.",
+        "5.2. Любой из указанных способов подписания признаётся сторонами согласованным способом выражения воли и подтверждения содержания Акта.",
+        "5.3. Акт, подписанный любым согласованным способом, имеет юридическую силу, эквивалентную документу на бумажном носителе с собственноручными подписями сторон.",
+        "5.4. Лицо, подписывающее Акт от имени Заказчика, подтверждает наличие необходимых полномочий."
+    )
+
+    fun generate(context: Context, act: ActRecord, mode: PdfMode = PdfMode.Filled): Result<File> = runCatching {
         val pdfDirectory = File(context.filesDir, "act_pdfs")
         if (!pdfDirectory.exists() && !pdfDirectory.mkdirs()) {
             throw IOException("Не удалось создать каталог для PDF")
         }
 
-        val fileName = "akt_${act.requestNumber.ifBlank { act.id.toString() }}.pdf"
+        val suffix = if (mode == PdfMode.Blank) "blank" else "filled"
+        val fileName = "akt_${act.requestNumber.ifBlank { act.id.toString() }}_$suffix.pdf"
             .replace("[^a-zA-Z0-9а-яА-Я._-]".toRegex(), "_")
         val outputFile = File(pdfDirectory, fileName)
 
         val document = PdfDocument()
+        var pageNumber = 1
+        var page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+        var canvas = page.canvas
+
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            textSize = 11f
+            textSize = 10.5f
         }
         val titlePaint = Paint(bodyPaint).apply {
-            textSize = 15f
+            textSize = 14f
             isFakeBoldText = true
         }
         val sectionPaint = Paint(bodyPaint).apply {
-            textSize = 12f
+            textSize = 11.5f
             isFakeBoldText = true
         }
         val smallPaint = Paint(bodyPaint).apply {
-            textSize = 10f
+            textSize = 9.5f
         }
         val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
@@ -52,17 +73,10 @@ object ActPdfGenerator {
             strokeWidth = 1f
         }
 
-        var pageNumber = 1
-        var page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
-        var canvas = page.canvas
         var y = margin
 
-        fun finishPage() {
+        fun newPage() {
             document.finishPage(page)
-        }
-
-        fun startNewPage() {
-            finishPage()
             pageNumber += 1
             page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
             canvas = page.canvas
@@ -70,151 +84,191 @@ object ActPdfGenerator {
         }
 
         fun ensureSpace(height: Float) {
-            if (y + height > pageHeight - margin) {
-                startNewPage()
-            }
+            if (y + height > pageHeight - margin) newPage()
         }
 
-        fun drawWrapped(text: String, paint: Paint = bodyPaint, extraGap: Float = lineGap) {
-            if (text.isBlank()) return
+        fun lineHeight(paint: Paint): Float {
+            val fm = paint.fontMetrics
+            return (fm.descent - fm.ascent) + 2f
+        }
+
+        fun drawLine(text: String, paint: Paint = bodyPaint, x: Float = margin) {
+            ensureSpace(lineHeight(paint))
+            y += -paint.fontMetrics.ascent
+            canvas.drawText(text, x, y, paint)
+            y += paint.fontMetrics.descent + 2f
+        }
+
+        fun wrapText(text: String, paint: Paint): List<String> {
             val maxWidth = pageWidth - margin * 2
             val words = text.trim().split(Regex("\\s+"))
-            var line = ""
-            words.forEach { word ->
-                val candidate = if (line.isEmpty()) word else "$line $word"
+            if (words.isEmpty()) return emptyList()
+            val lines = mutableListOf<String>()
+            var current = ""
+
+            fun pushWord(word: String) {
+                val candidate = if (current.isBlank()) word else "$current $word"
                 if (paint.measureText(candidate) <= maxWidth) {
-                    line = candidate
+                    current = candidate
                 } else {
-                    ensureSpace(paint.textSize + extraGap)
-                    canvas.drawText(line, margin, y, paint)
-                    y += paint.textSize + extraGap
-                    line = word
+                    if (current.isNotBlank()) lines += current
+                    if (paint.measureText(word) <= maxWidth) {
+                        current = word
+                    } else {
+                        var chunk = ""
+                        word.forEach { char ->
+                            val probe = "$chunk$char"
+                            if (paint.measureText(probe) <= maxWidth) {
+                                chunk = probe
+                            } else {
+                                if (chunk.isNotBlank()) lines += chunk
+                                chunk = char.toString()
+                            }
+                        }
+                        current = chunk
+                    }
                 }
             }
-            if (line.isNotBlank()) {
-                ensureSpace(paint.textSize + extraGap)
-                canvas.drawText(line, margin, y, paint)
-                y += paint.textSize + extraGap
-            }
+
+            words.forEach(::pushWord)
+            if (current.isNotBlank()) lines += current
+            return lines
         }
 
-        fun drawKeyValue(title: String, value: String) {
-            drawWrapped("$title: ${value.ifBlank { "Не заполнено" }}")
+        fun drawParagraph(text: String, paint: Paint = bodyPaint, after: Float = 4f) {
+            if (text.isBlank()) return
+            wrapText(text, paint).forEach { line -> drawLine(line, paint) }
+            y += after
+        }
+
+        fun drawSection(title: String) {
+            drawLine(title, sectionPaint)
+            y += 2f
+        }
+
+        fun drawKeyValue(label: String, value: String, blankLines: Int = 1) {
+            if (mode == PdfMode.Blank) {
+                drawLine("$label:", bodyPaint)
+                repeat(blankLines) {
+                    ensureSpace(18f)
+                    val top = y + 2f
+                    canvas.drawLine(margin, top + 12f, pageWidth - margin, top + 12f, linePaint)
+                    y += 16f
+                }
+                y += 2f
+            } else {
+                drawParagraph("$label: ${value.ifBlank { "Не заполнено" }}")
+            }
         }
 
         fun drawSignatureBlock(title: String, signature: List<SignatureStroke>) {
-            val boxHeight = 90f
-            val boxTopPadding = 8f
-            ensureSpace(22f + boxHeight + blockGap)
-            canvas.drawText(title, margin, y, sectionPaint)
-            y += sectionPaint.textSize + boxTopPadding
-            val rect = RectF(margin, y, pageWidth - margin, y + boxHeight)
+            val boxHeight = 74f
+            drawLine(title, bodyPaint)
+            ensureSpace(boxHeight + 26f)
+            val rect = RectF(margin, y + 2f, pageWidth - margin, y + 2f + boxHeight)
             canvas.drawRect(rect, linePaint)
-
-            val bitmap = signatureToBitmap(signature, (rect.width() - 16f).toInt(), (rect.height() - 16f).toInt())
-            if (bitmap != null) {
-                canvas.drawBitmap(bitmap, rect.left + 8f, rect.top + 8f, null)
+            if (mode == PdfMode.Filled) {
+                val bitmap = signatureToBitmap(signature, (rect.width() - 12f).toInt(), (rect.height() - 12f).toInt())
+                if (bitmap != null) {
+                    canvas.drawBitmap(bitmap, rect.left + 6f, rect.top + 6f, null)
+                }
             }
-            y += boxHeight + blockGap
+            y = rect.bottom + 14f
+            canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
+            y += 12f
+            drawLine("(подпись / расшифровка)", smallPaint)
+            y += 4f
         }
 
-        canvas.drawText("АКТ ДИАГНОСТИКИ ОБОРУДОВАНИЯ", margin, y, titlePaint)
-        y += titlePaint.textSize + 10f
+        drawLine("АКТ ДИАГНОСТИКИ ОБОРУДОВАНИЯ", titlePaint)
+        if (mode == PdfMode.Blank) {
+            drawLine("Пустой бланк для ручного заполнения", smallPaint)
+        }
+        y += 6f
+
+        drawSection("1. ОБЩИЕ СВЕДЕНИЯ")
         drawKeyValue("Номер заявки", act.requestNumber)
         drawKeyValue("Дата", act.date)
         drawKeyValue("Заказчик", act.customer)
         drawKeyValue("Адрес заказчика", act.customerAddress)
 
-        y += 4f
-        canvas.drawText("Сведения об оборудовании", margin, y, sectionPaint)
-        y += sectionPaint.textSize + lineGap
+        y += 2f
+        drawSection("2. СВЕДЕНИЯ ОБ ОБОРУДОВАНИИ")
         drawKeyValue("Код оборудования", act.equipmentCode)
         drawKeyValue("Наименование оборудования", act.equipmentName)
         drawKeyValue("Бренд", act.brand)
         drawKeyValue("Модель", act.model)
         drawKeyValue("Серийный номер", act.serialNumber)
-
-        y += 4f
-        canvas.drawText("Результаты диагностики", margin, y, sectionPaint)
-        y += sectionPaint.textSize + lineGap
-        drawKeyValue("Тип диагностики", act.diagnosisType.title)
         drawKeyValue("Наработка", act.operatingTime)
-        drawKeyValue("Комплектность", act.completeness)
-        drawKeyValue("Внешнее состояние", act.externalCondition)
-        drawKeyValue("Описание неисправности", act.malfunctionDescription)
 
-        if (act.checklistItems.isNotEmpty()) {
-            drawWrapped("Данные формы:", sectionPaint)
+        y += 2f
+        drawSection("3. РЕЗУЛЬТАТЫ ДИАГНОСТИКИ")
+        drawKeyValue("Тип диагностики", act.diagnosisType.title)
+        drawKeyValue("Комплектность", act.completeness, blankLines = 2)
+        drawKeyValue("Внешнее состояние", act.externalCondition, blankLines = 2)
+        drawKeyValue("Описание неисправности", act.malfunctionDescription, blankLines = 3)
+
+        if (mode == PdfMode.Filled && act.checklistItems.isNotEmpty()) {
+            drawLine("Данные формы:", sectionPaint)
             act.checklistItems.forEachIndexed { index, item ->
                 val status = buildString {
                     append(if (item.checked) "Проверено" else "Не проверено")
                     append(", ")
                     append(if (item.faulty) "Есть замечания" else "Без замечаний")
                 }
-                drawWrapped("${index + 1}. ${item.title}: $status", smallPaint, 4f)
+                drawParagraph("${index + 1}. ${item.title}: $status", smallPaint, after = 2f)
                 if (item.comment.isNotBlank()) {
-                    drawWrapped("Комментарий: ${item.comment}", smallPaint, 4f)
+                    drawParagraph("Комментарий: ${item.comment}", smallPaint, after = 2f)
                 }
             }
+            y += 4f
         }
 
-        drawKeyValue("Предварительное заключение", act.preliminaryConclusion)
-        if (act.diagnosisType == DiagnosisType.Advanced) {
-            drawKeyValue("Конкретная причина неисправности", act.rootCause)
-            drawKeyValue("Перечень требуемых работ", act.requiredWorks)
+        drawKeyValue("Предварительное заключение", act.preliminaryConclusion, blankLines = 3)
+        if (mode == PdfMode.Filled && act.diagnosisType == DiagnosisType.Advanced) {
+            drawKeyValue("Конкретная причина неисправности", act.rootCause, blankLines = 2)
+            drawKeyValue("Перечень требуемых работ", act.requiredWorks, blankLines = 2)
+        } else if (mode == PdfMode.Blank) {
+            drawKeyValue("Конкретная причина неисправности", "", blankLines = 2)
+            drawKeyValue("Перечень требуемых работ", "", blankLines = 2)
         }
 
-        y += 4f
-        canvas.drawText("3. ПРАВОВЫЕ УСЛОВИЯ", margin, y, sectionPaint)
-        y += sectionPaint.textSize + lineGap
-        drawWrapped("3.1. Заказчик подтверждает, что оборудование передано Исполнителю для проведения диагностики.")
-        drawWrapped("3.2. Заказчик согласен на проведение диагностики и её оплату согласно действующему прайс-листу Исполнителя либо согласованной стоимости.")
-        drawWrapped("3.3. Ремонт оборудования выполняется только после дополнительного согласования с Заказчиком объёма работ, сроков и стоимости.")
-        drawWrapped("3.4. В случае отказа Заказчика от ремонта после проведения диагностики, стоимость диагностики подлежит оплате в полном объёме.")
-        drawWrapped("3.5. Работы выполняются в порядке очередности поступления оборудования, с учётом производственной загрузки Исполнителя.")
+        drawSection("4. ПРАВОВЫЕ УСЛОВИЯ")
+        legalSection.take(5).forEach { drawParagraph(it) }
 
-        y += 2f
-        canvas.drawText("4. ХРАНЕНИЕ ОБОРУДОВАНИЯ", margin, y, sectionPaint)
-        y += sectionPaint.textSize + lineGap
-        drawWrapped("На период нахождения оборудования у Исполнителя оно хранится на складе / в ремонтной зоне Исполнителя.")
+        drawSection("5. ПОДПИСАНИЕ АКТА")
+        legalSection.drop(5).forEach { drawParagraph(it) }
 
-        y += 2f
-        canvas.drawText("5. ЭЛЕКТРОННОЕ ПОДПИСАНИЕ", margin, y, sectionPaint)
-        y += sectionPaint.textSize + lineGap
-        drawWrapped("5.1. Стороны договорились, что подписание настоящего Акта с использованием одноразового кода, направленного Заказчику посредством SMS, признаётся простой электронной подписью.")
-        drawWrapped("5.2. Акт, подписанный указанным способом, имеет полную юридическую силу, равную акту, подписанному собственноручно.")
-        drawWrapped("5.3. Заказчик подтверждает, что номер телефона, использованный для подписания, принадлежит ему и используется лично.")
-        drawWrapped("5.4. Оборудование принято уполномоченным представителем Заказчика. Подписывая настоящий акт, представитель подтверждает наличие полномочий на приём оборудования и выполнение соответствующих действий от имени Заказчика.")
+        drawSection("6. ХРАНЕНИЕ ОБОРУДОВАНИЯ")
+        drawParagraph("На период нахождения оборудования у Исполнителя оно хранится на складе / в ремонтной зоне Исполнителя.")
 
-        y += 8f
-        canvas.drawText("Подписи", margin, y, sectionPaint)
-        y += sectionPaint.textSize + lineGap
+        drawSection("7. ПОДПИСИ СТОРОН")
         drawSignatureBlock("Заказчик", act.customerSignature)
         drawSignatureBlock("Исполнитель", act.executorSignature)
         drawSignatureBlock("Утверждено директором", act.directorSignature)
 
-        if (act.photos.isNotEmpty()) {
+        if (mode == PdfMode.Filled && act.photos.isNotEmpty()) {
             act.photos.forEachIndexed { index, photo ->
                 val bitmap = BitmapFactory.decodeFile(photo.filePath) ?: return@forEachIndexed
                 val caption = "Фотография ${index + 1}"
                 val availableWidth = pageWidth - margin * 2
-                val targetWidth = availableWidth
-                val scale = targetWidth / bitmap.width
+                val imageTopOffset = 8f
+                val maxImageHeight = pageHeight - margin * 2 - 40f
+                val scale = minOf(availableWidth / bitmap.width, maxImageHeight / bitmap.height)
+                val targetWidth = bitmap.width * scale
                 val targetHeight = bitmap.height * scale
-                ensureSpace(sectionPaint.textSize + 10f + targetHeight + blockGap)
-                canvas.drawText(caption, margin, y, sectionPaint)
-                y += sectionPaint.textSize + 8f
+
+                ensureSpace(20f + imageTopOffset + targetHeight + blockGap)
+                drawLine(caption, sectionPaint)
                 val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth.toInt(), targetHeight.toInt(), true)
-                canvas.drawBitmap(scaled, margin, y, null)
-                y += targetHeight + blockGap
-                if (scaled != bitmap) {
-                    scaled.recycle()
-                }
+                canvas.drawBitmap(scaled, margin, y + imageTopOffset, null)
+                y += imageTopOffset + targetHeight + blockGap
+                if (scaled != bitmap) scaled.recycle()
                 bitmap.recycle()
             }
         }
 
-        finishPage()
+        document.finishPage(page)
         FileOutputStream(outputFile).use { output ->
             document.writeTo(output)
         }
@@ -222,11 +276,7 @@ object ActPdfGenerator {
         outputFile
     }
 
-    private fun signatureToBitmap(
-        signature: List<SignatureStroke>,
-        width: Int,
-        height: Int
-    ): Bitmap? {
+    private fun signatureToBitmap(signature: List<SignatureStroke>, width: Int, height: Int): Bitmap? {
         if (signature.isEmpty() || width <= 0 || height <= 0) return null
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)

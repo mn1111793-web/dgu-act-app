@@ -318,9 +318,6 @@ fun NewActScreen(
     var documentType by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.documentType ?: DocumentType.DiagnosticAct)
     }
-    var status by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.status ?: ActStatus.Draft)
-    }
     val createdAt = rememberSaveable(existingAct?.id) {
         existingAct?.createdAt?.ifBlank { today } ?: today
     }
@@ -532,6 +529,31 @@ fun NewActScreen(
 
     val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
     val resolvedModel = if (modelSelection == EquipmentCatalog.OTHER_OPTION) customModel else modelSelection
+    val status = remember(
+        date,
+        customer,
+        customerAddress,
+        equipmentCode,
+        equipmentName,
+        resolvedBrand,
+        resolvedModel,
+        customerSignatureSaved.size,
+        executorSignatureSaved.size,
+        directorSignatureSaved.size
+    ) {
+        resolveActStatus(
+            date = date,
+            customer = customer,
+            customerAddress = customerAddress,
+            equipmentCode = equipmentCode,
+            equipmentName = equipmentName,
+            brand = resolvedBrand,
+            model = resolvedModel,
+            customerSignature = customerSignatureSaved.toList(),
+            executorSignature = executorSignatureSaved.toList(),
+            directorSignature = directorSignatureSaved.toList()
+        )
+    }
     val onTakePhotoClick = {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             val createdPhoto = PhotoStorage.createCameraPhoto(context)
@@ -645,16 +667,11 @@ fun NewActScreen(
                                 ?: DocumentType.DiagnosticAct
                         }
                     )
-                    val statusOptions = ActStatus.values().toList()
-                    DropdownField(
+                    FormTextField(
                         value = status.title,
-                        options = statusOptions.map { it.title },
                         label = stringResource(id = R.string.field_status),
                         placeholder = stringResource(id = R.string.field_status_placeholder),
-                        onOptionSelected = { selectedTitle ->
-                            status = statusOptions.firstOrNull { it.title == selectedTitle }
-                                ?: ActStatus.Draft
-                        }
+                        readOnly = true
                     )
                     FormTextField(
                         value = date,
@@ -976,10 +993,22 @@ fun NewActScreen(
                             savedItems = checklistItems.toList(),
                             legacyAct = existingAct
                         )
+                        val actStatus = resolveActStatus(
+                            date = date,
+                            customer = customer,
+                            customerAddress = customerAddress,
+                            equipmentCode = equipmentCode,
+                            equipmentName = equipmentName,
+                            brand = resolvedBrand,
+                            model = resolvedModel,
+                            customerSignature = customerSignatureSaved.toList(),
+                            executorSignature = executorSignatureSaved.toList(),
+                            directorSignature = directorSignatureSaved.toList()
+                        )
                         val act = ActRecord(
                             id = existingAct?.id ?: System.currentTimeMillis(),
                             documentType = documentType,
-                            status = status,
+                            status = actStatus,
                             createdAt = createdAt,
                             requestNumber = requestNumber,
                             date = date.ifBlank { context.getString(R.string.default_date_value) },
@@ -1223,7 +1252,7 @@ fun ActsListScreen(
                             )
                             InfoLine(
                                 title = stringResource(id = R.string.field_status),
-                                value = act.status.title
+                                value = act.resolvedStatus().title
                             )
                             InfoLine(
                                 title = stringResource(id = R.string.field_customer),
@@ -1367,7 +1396,7 @@ fun ActDetailsScreen(
                     InfoLine(stringResource(id = R.string.field_created_at), act.createdAt)
                     InfoLine(stringResource(id = R.string.field_date), act.date)
                     InfoLine(stringResource(id = R.string.field_document_type), act.documentType.title)
-                    InfoLine(stringResource(id = R.string.field_status), act.status.title)
+                    InfoLine(stringResource(id = R.string.field_status), act.resolvedStatus().title)
                     InfoLine(stringResource(id = R.string.field_customer), act.customer)
                     InfoLine(stringResource(id = R.string.field_phone), act.phone)
                     InfoLine(stringResource(id = R.string.field_customer_address), act.customerAddress)
@@ -2048,6 +2077,51 @@ private fun DropdownField(
 
 private fun List<ChecklistItemState>.findCommentByKey(key: String): String =
     firstOrNull { it.key == key }?.comment.orEmpty()
+
+private fun resolveActStatus(
+    date: String,
+    customer: String,
+    customerAddress: String,
+    equipmentCode: String,
+    equipmentName: String,
+    brand: String,
+    model: String,
+    customerSignature: List<SignatureStroke>,
+    executorSignature: List<SignatureStroke>,
+    directorSignature: List<SignatureStroke>
+): ActStatus {
+    val hasCustomerSignature = customerSignature.isNotEmpty()
+    val hasExecutorSignature = executorSignature.isNotEmpty()
+    val hasDirectorSignature = directorSignature.isNotEmpty()
+
+    if (hasDirectorSignature) return ActStatus.Approved
+    if (hasCustomerSignature && hasExecutorSignature) return ActStatus.Signed
+
+    val isComplete = listOf(
+        date,
+        customer,
+        customerAddress,
+        equipmentCode,
+        equipmentName,
+        brand,
+        model
+    ).all { it.isNotBlank() }
+
+    return if (isComplete) ActStatus.Saved else ActStatus.Draft
+}
+
+private fun ActRecord.resolvedStatus(): ActStatus = resolveActStatus(
+    date = date,
+    customer = customer,
+    customerAddress = customerAddress,
+    equipmentCode = equipmentCode,
+    equipmentName = equipmentName,
+    brand = brand,
+    model = model,
+    customerSignature = customerSignature,
+    executorSignature = executorSignature,
+    directorSignature = directorSignature
+)
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSignature(
     signature: List<SignatureStroke>,

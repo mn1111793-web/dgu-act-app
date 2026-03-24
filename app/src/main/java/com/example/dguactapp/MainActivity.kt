@@ -634,23 +634,25 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_created_at_placeholder),
                         readOnly = true
                     )
+                    val documentTypeOptions = DocumentType.values().toList()
                     DropdownField(
                         value = documentType.title,
-                        options = DocumentType.values().map { it.title },
+                        options = documentTypeOptions.map { it.title },
                         label = stringResource(id = R.string.field_document_type),
                         placeholder = stringResource(id = R.string.field_document_type_placeholder),
                         onOptionSelected = { selectedTitle ->
-                            documentType = DocumentType.values().firstOrNull { it.title == selectedTitle }
+                            documentType = documentTypeOptions.firstOrNull { it.title == selectedTitle }
                                 ?: DocumentType.DiagnosticAct
                         }
                     )
+                    val statusOptions = ActStatus.values().toList()
                     DropdownField(
                         value = status.title,
-                        options = ActStatus.values().map { it.title },
+                        options = statusOptions.map { it.title },
                         label = stringResource(id = R.string.field_status),
                         placeholder = stringResource(id = R.string.field_status_placeholder),
                         onOptionSelected = { selectedTitle ->
-                            status = ActStatus.values().firstOrNull { it.title == selectedTitle }
+                            status = statusOptions.firstOrNull { it.title == selectedTitle }
                                 ?: ActStatus.Draft
                         }
                     )

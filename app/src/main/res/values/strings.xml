@@ -84,4 +84,15 @@
     <string name="photos_thumbnail_description">Миниатюра фотографии акта</string>
     <string name="photos_camera_permission_denied">Без разрешения на камеру сделать фото не получится.</string>
     <string name="photos_import_error">Не удалось импортировать выбранные фотографии.</string>
+    <string name="signatures_section_title">Подписи</string>
+    <string name="signature_customer_title">Подпись заказчика</string>
+    <string name="signature_executor_title">Подпись исполнителя</string>
+    <string name="signature_director_title">Утверждено директором</string>
+    <string name="signature_clear_button">Очистить</string>
+    <string name="signature_save_button">Сохранить подпись</string>
+    <string name="signature_not_saved">Подпись ещё не сохранена.</string>
+    <string name="signature_saved">Подпись сохранена и будет добавлена в акт.</string>
+    <string name="signature_customer_saved_message">Подпись заказчика сохранена.</string>
+    <string name="signature_executor_saved_message">Подпись исполнителя сохранена.</string>
+    <string name="signature_director_saved_message">Подпись директора сохранена.</string>
 </resources>

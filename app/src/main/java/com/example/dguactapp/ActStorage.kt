@@ -24,7 +24,10 @@ data class ActRecord(
     val preliminaryConclusion: String = "",
     val rootCause: String = "",
     val requiredWorks: String = "",
-    val photos: List<ActPhoto> = emptyList()
+    val photos: List<ActPhoto> = emptyList(),
+    val customerSignature: List<SignatureStroke> = emptyList(),
+    val executorSignature: List<SignatureStroke> = emptyList(),
+    val directorSignature: List<SignatureStroke> = emptyList()
 )
 
 object ActStorage {
@@ -121,6 +124,9 @@ object ActStorage {
                 }
             }
         )
+        put("customerSignature", customerSignature.toJsonArray())
+        put("executorSignature", executorSignature.toJsonArray())
+        put("directorSignature", directorSignature.toJsonArray())
     }
 
     private fun JSONObject.toActRecord(): ActRecord {
@@ -192,7 +198,50 @@ object ActStorage {
             },
             rootCause = optString("rootCause"),
             requiredWorks = optString("requiredWorks"),
-            photos = photos
+            photos = photos,
+            customerSignature = optJSONArray("customerSignature").toSignatureStrokes(),
+            executorSignature = optJSONArray("executorSignature").toSignatureStrokes(),
+            directorSignature = optJSONArray("directorSignature").toSignatureStrokes()
         )
+    }
+
+    private fun List<SignatureStroke>.toJsonArray(): JSONArray = JSONArray().apply {
+        forEach { stroke ->
+            put(
+                JSONArray().apply {
+                    stroke.points.forEach { point ->
+                        put(
+                            JSONObject().apply {
+                                put("x", point.x)
+                                put("y", point.y)
+                            }
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    private fun JSONArray?.toSignatureStrokes(): List<SignatureStroke> {
+        if (this == null) return emptyList()
+        return buildList {
+            for (strokeIndex in 0 until length()) {
+                val strokeArray = optJSONArray(strokeIndex) ?: continue
+                val points = buildList {
+                    for (pointIndex in 0 until strokeArray.length()) {
+                        val pointObject = strokeArray.optJSONObject(pointIndex) ?: continue
+                        add(
+                            SignaturePoint(
+                                x = pointObject.optDouble("x").toFloat(),
+                                y = pointObject.optDouble("y").toFloat()
+                            )
+                        )
+                    }
+                }
+                if (points.isNotEmpty()) {
+                    add(SignatureStroke(points = points))
+                }
+            }
+        }
     }
 }

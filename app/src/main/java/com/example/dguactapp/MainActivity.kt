@@ -13,6 +13,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -66,14 +69,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
@@ -337,6 +346,24 @@ fun NewActScreen(
     }
     val photos = rememberSaveable(existingAct?.id, saver = ActPhotoListSaver) {
         existingAct?.photos.orEmpty().toMutableStateList()
+    }
+    val customerSignatureDraft = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+        existingAct?.customerSignature.orEmpty().toMutableStateList()
+    }
+    val customerSignatureSaved = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+        existingAct?.customerSignature.orEmpty().toMutableStateList()
+    }
+    val executorSignatureDraft = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+        existingAct?.executorSignature.orEmpty().toMutableStateList()
+    }
+    val executorSignatureSaved = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+        existingAct?.executorSignature.orEmpty().toMutableStateList()
+    }
+    val directorSignatureDraft = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+        existingAct?.directorSignature.orEmpty().toMutableStateList()
+    }
+    val directorSignatureSaved = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+        existingAct?.directorSignature.orEmpty().toMutableStateList()
     }
     var pendingCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
     var isImportingPhotos by remember { mutableStateOf(false) }
@@ -788,6 +815,70 @@ fun NewActScreen(
             }
 
             item {
+                DetailCard(title = stringResource(id = R.string.signatures_section_title)) {
+                    SignatureEditorCard(
+                        title = stringResource(id = R.string.signature_customer_title),
+                        draftSignature = customerSignatureDraft,
+                        savedSignature = customerSignatureSaved,
+                        onDraftChange = { updated ->
+                            customerSignatureDraft.clear()
+                            customerSignatureDraft.addAll(updated)
+                        },
+                        onClearClick = { customerSignatureDraft.clear() },
+                        onSaveClick = {
+                            customerSignatureSaved.clear()
+                            customerSignatureSaved.addAll(customerSignatureDraft)
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.signature_customer_saved_message),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SignatureEditorCard(
+                        title = stringResource(id = R.string.signature_executor_title),
+                        draftSignature = executorSignatureDraft,
+                        savedSignature = executorSignatureSaved,
+                        onDraftChange = { updated ->
+                            executorSignatureDraft.clear()
+                            executorSignatureDraft.addAll(updated)
+                        },
+                        onClearClick = { executorSignatureDraft.clear() },
+                        onSaveClick = {
+                            executorSignatureSaved.clear()
+                            executorSignatureSaved.addAll(executorSignatureDraft)
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.signature_executor_saved_message),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SignatureEditorCard(
+                        title = stringResource(id = R.string.signature_director_title),
+                        draftSignature = directorSignatureDraft,
+                        savedSignature = directorSignatureSaved,
+                        onDraftChange = { updated ->
+                            directorSignatureDraft.clear()
+                            directorSignatureDraft.addAll(updated)
+                        },
+                        onClearClick = { directorSignatureDraft.clear() },
+                        onSaveClick = {
+                            directorSignatureSaved.clear()
+                            directorSignatureSaved.addAll(directorSignatureDraft)
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.signature_director_saved_message),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                }
+            }
+
+            item {
                 Button(
                     onClick = {
                         val completenessSummary = checklistItems.findCommentByKey("visual_completeness")
@@ -817,7 +908,10 @@ fun NewActScreen(
                             preliminaryConclusion = preliminaryConclusion,
                             rootCause = if (diagnosisType == DiagnosisType.Advanced) rootCause else "",
                             requiredWorks = if (diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
-                            photos = photos.toList()
+                            photos = photos.toList(),
+                            customerSignature = customerSignatureSaved.toList(),
+                            executorSignature = executorSignatureSaved.toList(),
+                            directorSignature = directorSignatureSaved.toList()
                         )
                         PhotoStorage.deleteMissingPhotos(existingAct?.photos.orEmpty(), act.photos)
                         saveCompleted = true
@@ -1159,6 +1253,25 @@ fun ActDetailsScreen(
                     }
                 }
             )
+            DetailCard(
+                title = stringResource(id = R.string.signatures_section_title),
+                content = {
+                    SignatureReadonlyCard(
+                        title = stringResource(id = R.string.signature_customer_title),
+                        signature = act.customerSignature
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SignatureReadonlyCard(
+                        title = stringResource(id = R.string.signature_executor_title),
+                        signature = act.executorSignature
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SignatureReadonlyCard(
+                        title = stringResource(id = R.string.signature_director_title),
+                        signature = act.directorSignature
+                    )
+                }
+            )
         }
     }
 }
@@ -1184,6 +1297,122 @@ private fun DetailCard(
             )
             content()
         }
+    }
+}
+
+@Composable
+private fun SignatureEditorCard(
+    title: String,
+    draftSignature: List<SignatureStroke>,
+    savedSignature: List<SignatureStroke>,
+    onDraftChange: (List<SignatureStroke>) -> Unit,
+    onClearClick: () -> Unit,
+    onSaveClick: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        SignaturePad(
+            signature = draftSignature,
+            onSignatureChange = onDraftChange,
+            editable = true
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onClearClick,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(text = stringResource(id = R.string.signature_clear_button))
+            }
+            Button(
+                onClick = onSaveClick,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(text = stringResource(id = R.string.signature_save_button))
+            }
+        }
+        Text(
+            text = if (savedSignature.isEmpty()) {
+                stringResource(id = R.string.signature_not_saved)
+            } else {
+                stringResource(id = R.string.signature_saved)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SignatureReadonlyCard(
+    title: String,
+    signature: List<SignatureStroke>
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        SignaturePad(
+            signature = signature,
+            onSignatureChange = {},
+            editable = false
+        )
+    }
+}
+
+@Composable
+private fun SignaturePad(
+    signature: List<SignatureStroke>,
+    onSignatureChange: (List<SignatureStroke>) -> Unit,
+    editable: Boolean
+) {
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val surfaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    val strokeColor = MaterialTheme.colorScheme.onSurface
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(170.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(surfaceColor)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(14.dp)
+            )
+            .onSizeChanged { canvasSize = it }
+            .pointerInput(editable, signature, canvasSize) {
+                if (!editable || canvasSize.width == 0 || canvasSize.height == 0) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val startPoint = down.position.normalize(canvasSize)
+                    var updatedSignature = signature + SignatureStroke(points = listOf(startPoint))
+                    onSignatureChange(updatedSignature)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        val updatedStrokePoints =
+                            updatedSignature.last().points + change.position.normalize(canvasSize)
+                        updatedSignature = updatedSignature.dropLast(1) + SignatureStroke(points = updatedStrokePoints)
+                        onSignatureChange(updatedSignature)
+                        change.consume()
+                    }
+                }
+            }
+    ) {
+        drawSignature(signature = signature, color = strokeColor)
     }
 }
 
@@ -1543,6 +1772,43 @@ private fun DropdownField(
 
 private fun List<ChecklistItemState>.findCommentByKey(key: String): String =
     firstOrNull { it.key == key }?.comment.orEmpty()
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSignature(
+    signature: List<SignatureStroke>,
+    color: Color
+) {
+    signature.forEach { stroke ->
+        if (stroke.points.size == 1) {
+            val point = stroke.points.first()
+            drawCircle(
+                color = color,
+                radius = 2.2.dp.toPx(),
+                center = Offset(point.x * size.width, point.y * size.height)
+            )
+        } else {
+            stroke.points.windowed(2).forEach { pointsPair ->
+                val start = pointsPair[0]
+                val end = pointsPair[1]
+                drawLine(
+                    color = color,
+                    start = Offset(start.x * size.width, start.y * size.height),
+                    end = Offset(end.x * size.width, end.y * size.height),
+                    strokeWidth = 2.8.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+    }
+}
+
+private fun Offset.normalize(size: IntSize): SignaturePoint {
+    val safeWidth = size.width.coerceAtLeast(1)
+    val safeHeight = size.height.coerceAtLeast(1)
+    return SignaturePoint(
+        x = (x / safeWidth.toFloat()).coerceIn(0f, 1f),
+        y = (y / safeHeight.toFloat()).coerceIn(0f, 1f)
+    )
+}
 
 private fun currentDateDisplay(): String =
     SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date())

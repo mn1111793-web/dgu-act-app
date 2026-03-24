@@ -31,10 +31,12 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1018,15 +1020,18 @@ private fun ChecklistSectionEditor(
     }
 
     DetailCard(title = section.title) {
-        ChecklistTableHeader()
-        sectionItems.forEachIndexed { index, item ->
-            if (index > 0) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        val horizontalScroll = rememberScrollState()
+        Column(modifier = Modifier.horizontalScroll(horizontalScroll)) {
+            ChecklistTableHeader()
+            sectionItems.forEachIndexed { index, item ->
+                if (index > 0) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+                ChecklistEditableRow(
+                    item = item,
+                    onItemChange = onItemChange
+                )
             }
-            ChecklistEditableRow(
-                item = item,
-                onItemChange = onItemChange
-            )
         }
     }
 }
@@ -1310,14 +1315,17 @@ fun ActDetailsScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        ChecklistTableHeader()
-                        section.items.mapNotNull { definition ->
-                            act.checklistItems.firstOrNull { it.key == definition.key }
-                        }.forEachIndexed { index, item ->
-                            if (index > 0) {
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        val horizontalScroll = rememberScrollState()
+                        Column(modifier = Modifier.horizontalScroll(horizontalScroll)) {
+                            ChecklistTableHeader()
+                            section.items.mapNotNull { definition ->
+                                act.checklistItems.firstOrNull { it.key == definition.key }
+                            }.forEachIndexed { index, item ->
+                                if (index > 0) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                }
+                                ChecklistReadonlyRow(item = item)
                             }
-                            ChecklistReadonlyRow(item = item)
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -1663,6 +1671,7 @@ private fun PhotoGalleryReadonly(photos: List<ActPhoto>) {
 private fun ChecklistTableHeader() {
     Row(
         modifier = Modifier
+            .widthIn(min = 760.dp)
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1708,6 +1717,7 @@ private fun ChecklistEditableRow(
 ) {
     Row(
         modifier = Modifier
+            .widthIn(min = 760.dp)
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1753,6 +1763,7 @@ private fun ChecklistEditableRow(
 private fun ChecklistReadonlyRow(item: ChecklistItemState) {
     Row(
         modifier = Modifier
+            .widthIn(min = 760.dp)
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.Top,

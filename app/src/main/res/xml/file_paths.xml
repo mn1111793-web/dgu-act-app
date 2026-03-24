@@ -3,4 +3,7 @@
     <files-path
         name="act_photos"
         path="act_photos/" />
+    <files-path
+        name="act_pdfs"
+        path="act_pdfs/" />
 </paths>

@@ -6,9 +6,13 @@ import org.json.JSONObject
 
 data class ActRecord(
     val id: Long,
+    val documentType: DocumentType = DocumentType.DiagnosticAct,
+    val status: ActStatus = ActStatus.Draft,
+    val createdAt: String = "",
     val requestNumber: String,
     val date: String,
     val customer: String,
+    val phone: String = "",
     val customerAddress: String,
     val equipmentCode: String,
     val equipmentName: String,
@@ -24,6 +28,8 @@ data class ActRecord(
     val preliminaryConclusion: String = "",
     val rootCause: String = "",
     val requiredWorks: String = "",
+    val pdfPath: String = "",
+    val comment: String = "",
     val photos: List<ActPhoto> = emptyList(),
     val customerSignature: List<SignatureStroke> = emptyList(),
     val executorSignature: List<SignatureStroke> = emptyList(),
@@ -86,9 +92,13 @@ object ActStorage {
 
     private fun ActRecord.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
+        put("documentType", documentType.storageValue)
+        put("status", status.storageValue)
+        put("createdAt", createdAt)
         put("requestNumber", requestNumber)
         put("date", date)
         put("customer", customer)
+        put("phone", phone)
         put("customerAddress", customerAddress)
         put("equipmentCode", equipmentCode)
         put("equipmentName", equipmentName)
@@ -103,6 +113,8 @@ object ActStorage {
         put("preliminaryConclusion", preliminaryConclusion)
         put("rootCause", rootCause)
         put("requiredWorks", requiredWorks)
+        put("pdfPath", pdfPath)
+        put("comment", comment)
         put(
             "photos",
             JSONArray().apply {
@@ -139,6 +151,8 @@ object ActStorage {
 
     private fun JSONObject.toActRecord(): ActRecord {
         val diagnosisType = DiagnosisType.fromStorageValue(optString("diagnosisType"))
+        val documentType = DocumentType.fromStorageValue(optString("documentType"))
+        val status = ActStatus.fromStorageValue(optString("status"))
         val checklistItems = optJSONArray("checklistItems")
             ?.let { jsonArray ->
                 buildList {
@@ -179,9 +193,13 @@ object ActStorage {
 
         val legacyRecord = ActRecord(
             id = optLong("id"),
+            documentType = documentType,
+            status = status,
+            createdAt = optString("createdAt").ifBlank { optString("date") },
             requestNumber = optString("requestNumber"),
             date = optString("date"),
             customer = optString("customer"),
+            phone = optString("phone"),
             customerAddress = optString("customerAddress"),
             equipmentCode = optString("equipmentCode"),
             equipmentName = optString("equipmentName"),
@@ -206,6 +224,8 @@ object ActStorage {
             },
             rootCause = optString("rootCause"),
             requiredWorks = optString("requiredWorks"),
+            pdfPath = optString("pdfPath"),
+            comment = optString("comment"),
             photos = photos,
             customerSignature = optJSONArray("customerSignature").toSignatureStrokes(),
             executorSignature = optJSONArray("executorSignature").toSignatureStrokes(),

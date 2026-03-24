@@ -59,6 +59,14 @@ object ActStorage {
         saveActs(context, updatedActs)
     }
 
+    fun deleteAct(context: Context, actId: Long): ActRecord? {
+        val acts = loadActs(context)
+        val actToDelete = acts.firstOrNull { it.id == actId } ?: return null
+        val updatedActs = acts.filterNot { it.id == actId }
+        saveActs(context, updatedActs)
+        return actToDelete
+    }
+
     fun nextSequence(acts: List<ActRecord>): Int = acts.maxOfOrNull { act ->
         requestNumberRegex.matchEntire(act.requestNumber)
             ?.groupValues

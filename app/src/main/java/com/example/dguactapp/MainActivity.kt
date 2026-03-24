@@ -315,6 +315,15 @@ fun NewActScreen(
     var equipmentCode by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.equipmentCode.orEmpty())
     }
+    var documentType by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.documentType ?: DocumentType.DiagnosticAct)
+    }
+    var status by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.status ?: ActStatus.Draft)
+    }
+    val createdAt = rememberSaveable(existingAct?.id) {
+        existingAct?.createdAt?.ifBlank { today } ?: today
+    }
     var equipmentName by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.equipmentName.orEmpty())
     }
@@ -323,6 +332,9 @@ fun NewActScreen(
     }
     var customer by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.customer.orEmpty())
+    }
+    var phone by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.phone.orEmpty())
     }
     var customerAddress by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.customerAddress.orEmpty())
@@ -363,6 +375,12 @@ fun NewActScreen(
     }
     var requiredWorks by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.requiredWorks.orEmpty())
+    }
+    var pdfPath by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.pdfPath.orEmpty())
+    }
+    var comment by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.comment.orEmpty())
     }
     val photos = rememberSaveable(existingAct?.id, saver = ActPhotoListSaver) {
         existingAct?.photos.orEmpty().toMutableStateList()
@@ -610,6 +628,33 @@ fun NewActScreen(
                         readOnly = true
                     )
                     FormTextField(
+                        value = createdAt,
+                        onValueChange = {},
+                        label = stringResource(id = R.string.field_created_at),
+                        placeholder = stringResource(id = R.string.field_created_at_placeholder),
+                        readOnly = true
+                    )
+                    DropdownField(
+                        value = documentType.title,
+                        options = DocumentType.values().map { it.title },
+                        label = stringResource(id = R.string.field_document_type),
+                        placeholder = stringResource(id = R.string.field_document_type_placeholder),
+                        onOptionSelected = { selectedTitle ->
+                            documentType = DocumentType.values().firstOrNull { it.title == selectedTitle }
+                                ?: DocumentType.DiagnosticAct
+                        }
+                    )
+                    DropdownField(
+                        value = status.title,
+                        options = ActStatus.values().map { it.title },
+                        label = stringResource(id = R.string.field_status),
+                        placeholder = stringResource(id = R.string.field_status_placeholder),
+                        onOptionSelected = { selectedTitle ->
+                            status = ActStatus.values().firstOrNull { it.title == selectedTitle }
+                                ?: ActStatus.Draft
+                        }
+                    )
+                    FormTextField(
                         value = date,
                         onValueChange = { date = it },
                         label = stringResource(id = R.string.field_date),
@@ -620,6 +665,13 @@ fun NewActScreen(
                         onValueChange = { customer = it },
                         label = stringResource(id = R.string.field_customer),
                         placeholder = stringResource(id = R.string.field_customer_placeholder)
+                    )
+                    FormTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = stringResource(id = R.string.field_phone),
+                        placeholder = stringResource(id = R.string.field_phone_placeholder),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                     )
                     FormTextField(
                         value = customerAddress,
@@ -804,6 +856,25 @@ fun NewActScreen(
                 }
             }
 
+            item {
+                DetailCard(title = stringResource(id = R.string.additional_info_title)) {
+                    FormTextField(
+                        value = pdfPath,
+                        onValueChange = { pdfPath = it },
+                        label = stringResource(id = R.string.field_pdf_path),
+                        placeholder = stringResource(id = R.string.field_pdf_path_placeholder)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    FormTextField(
+                        value = comment,
+                        onValueChange = { comment = it },
+                        label = stringResource(id = R.string.field_comment),
+                        placeholder = stringResource(id = R.string.field_comment_placeholder),
+                        minLines = 3
+                    )
+                }
+            }
+
             if (diagnosisType == DiagnosisType.Advanced) {
                 item {
                     DetailCard(title = stringResource(id = R.string.advanced_result_title)) {
@@ -905,11 +976,15 @@ fun NewActScreen(
                         )
                         val act = ActRecord(
                             id = existingAct?.id ?: System.currentTimeMillis(),
+                            documentType = documentType,
+                            status = status,
+                            createdAt = createdAt,
                             requestNumber = requestNumber,
                             date = date.ifBlank { context.getString(R.string.default_date_value) },
                             customer = customer.ifBlank {
                                 context.getString(R.string.default_customer_value)
                             },
+                            phone = phone,
                             customerAddress = customerAddress,
                             equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
@@ -925,6 +1000,8 @@ fun NewActScreen(
                             preliminaryConclusion = preliminaryConclusion,
                             rootCause = if (diagnosisType == DiagnosisType.Advanced) rootCause else "",
                             requiredWorks = if (diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
+                            pdfPath = pdfPath,
+                            comment = comment,
                             photos = photos.toList(),
                             customerSignature = customerSignatureSaved.toList(),
                             executorSignature = executorSignatureSaved.toList(),
@@ -1139,6 +1216,14 @@ fun ActsListScreen(
                                 value = act.date
                             )
                             InfoLine(
+                                title = stringResource(id = R.string.field_document_type),
+                                value = act.documentType.title
+                            )
+                            InfoLine(
+                                title = stringResource(id = R.string.field_status),
+                                value = act.status.title
+                            )
+                            InfoLine(
                                 title = stringResource(id = R.string.field_customer),
                                 value = act.customer
                             )
@@ -1277,8 +1362,12 @@ fun ActDetailsScreen(
                 title = stringResource(id = R.string.act_main_info_title),
                 content = {
                     InfoLine(stringResource(id = R.string.field_request_number), act.requestNumber)
+                    InfoLine(stringResource(id = R.string.field_created_at), act.createdAt)
                     InfoLine(stringResource(id = R.string.field_date), act.date)
+                    InfoLine(stringResource(id = R.string.field_document_type), act.documentType.title)
+                    InfoLine(stringResource(id = R.string.field_status), act.status.title)
                     InfoLine(stringResource(id = R.string.field_customer), act.customer)
+                    InfoLine(stringResource(id = R.string.field_phone), act.phone)
                     InfoLine(stringResource(id = R.string.field_customer_address), act.customerAddress)
                 }
             )
@@ -1330,10 +1419,17 @@ fun ActDetailsScreen(
                         stringResource(id = R.string.preliminary_conclusion_title),
                         act.preliminaryConclusion
                     )
+                    InfoLine(stringResource(id = R.string.field_comment), act.comment)
                     if (act.diagnosisType == DiagnosisType.Advanced) {
                         InfoLine(stringResource(id = R.string.root_cause_title), act.rootCause)
                         InfoLine(stringResource(id = R.string.required_works_title), act.requiredWorks)
                     }
+                }
+            )
+            DetailCard(
+                title = stringResource(id = R.string.additional_info_title),
+                content = {
+                    InfoLine(stringResource(id = R.string.field_pdf_path), act.pdfPath)
                 }
             )
             DetailCard(

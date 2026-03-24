@@ -95,4 +95,10 @@
     <string name="signature_customer_saved_message">Подпись заказчика сохранена.</string>
     <string name="signature_executor_saved_message">Подпись исполнителя сохранена.</string>
     <string name="signature_director_saved_message">Подпись директора сохранена.</string>
+    <string name="generate_pdf_button">Сформировать PDF</string>
+    <string name="share_pdf_button">Поделиться PDF</string>
+    <string name="share_pdf_title">Отправка PDF</string>
+    <string name="pdf_generated_success">PDF успешно сформирован и сохранён на устройстве.</string>
+    <string name="pdf_generated_error">Не удалось сформировать PDF.</string>
+    <string name="pdf_share_error">Не удалось подготовить PDF для отправки.</string>
 </resources>

@@ -1,8 +1,10 @@
 package com.example.dguactapp
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -1148,7 +1150,28 @@ fun ActDetailsScreen(
     onEditClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    var generatedPdfUri by remember(act.id) { mutableStateOf<Uri?>(null) }
     BackHandler(onBack = onBackClick)
+
+    fun generatePdf(): Uri? {
+        val result = ActPdfGenerator.generate(context, act)
+        return result.getOrNull()?.let { file ->
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+        }
+    }
+
+    fun sharePdf(pdfUri: Uri) {
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, pdfUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.share_pdf_title)))
+    }
 
     Scaffold(
         topBar = {
@@ -1272,6 +1295,50 @@ fun ActDetailsScreen(
                     )
                 }
             )
+
+            Button(
+                onClick = {
+                    val uri = generatePdf()
+                    if (uri != null) {
+                        generatedPdfUri = uri
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.pdf_generated_success),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.pdf_generated_error),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.generate_pdf_button))
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val uri = generatedPdfUri ?: generatePdf()
+                    if (uri != null) {
+                        generatedPdfUri = uri
+                        sharePdf(uri)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.pdf_share_error),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.share_pdf_button))
+            }
         }
     }
 }

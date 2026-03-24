@@ -144,8 +144,3 @@ val ChecklistStateSaver = listSaver<SnapshotStateList<ChecklistItemState>, Strin
             .toMutableStateList()
     }
 )
-
-fun SnapshotStateList<ChecklistItemState>.replaceWith(newItems: List<ChecklistItemState>) {
-    clear()
-    addAll(newItems)
-}

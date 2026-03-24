@@ -346,7 +346,7 @@ fun NewActScreen(
     }
     val checklistItems = rememberSaveable(existingAct?.id, saver = ChecklistStateSaver) {
         DiagnosticChecklistCatalog.stateFor(
-            type = diagnosisType,
+            type = DiagnosisType.Advanced,
             savedItems = existingAct?.checklistItems.orEmpty(),
             legacyAct = existingAct
         ).toMutableStateList()
@@ -773,15 +773,7 @@ fun NewActScreen(
                     DiagnosisTypeSelector(
                         selectedType = diagnosisType,
                         onTypeSelected = { selectedType ->
-                            if (selectedType == diagnosisType) return@DiagnosisTypeSelector
                             diagnosisType = selectedType
-                            checklistItems.replaceWith(
-                                DiagnosticChecklistCatalog.stateFor(
-                                    type = selectedType,
-                                    savedItems = checklistItems.toList(),
-                                    legacyAct = existingAct
-                                )
-                            )
                         }
                     )
                 }
@@ -906,6 +898,11 @@ fun NewActScreen(
                             checklistItems.findCommentByKey("visual_casing_condition"),
                             checklistItems.findCommentByKey("visual_damage_traces")
                         ).filter { it.isNotBlank() }.joinToString("; ")
+                        val actChecklistItems = DiagnosticChecklistCatalog.stateFor(
+                            type = diagnosisType,
+                            savedItems = checklistItems.toList(),
+                            legacyAct = existingAct
+                        )
                         val act = ActRecord(
                             id = existingAct?.id ?: System.currentTimeMillis(),
                             requestNumber = requestNumber,
@@ -924,7 +921,7 @@ fun NewActScreen(
                             externalCondition = externalConditionSummary,
                             malfunctionDescription = preliminaryConclusion,
                             diagnosisType = diagnosisType,
-                            checklistItems = checklistItems.toList(),
+                            checklistItems = actChecklistItems,
                             preliminaryConclusion = preliminaryConclusion,
                             rootCause = if (diagnosisType == DiagnosisType.Advanced) rootCause else "",
                             requiredWorks = if (diagnosisType == DiagnosisType.Advanced) requiredWorks else "",

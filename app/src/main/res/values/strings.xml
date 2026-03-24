@@ -12,6 +12,9 @@
     <string name="new_act_screen_subtitle">Форма акта диагностики оборудования</string>
     <string name="back_button">Назад</string>
     <string name="edit_button">Редактировать</string>
+    <string name="delete_button">Удалить</string>
+    <string name="cancel_button">Отмена</string>
+    <string name="delete_act_confirmation">Вы уверены, что хотите удалить акт?</string>
     <string name="form_intro_title">Заполните сведения по заявке</string>
     <string name="form_intro_text">Код оборудования выбирается из справочника, номер заявки формируется автоматически, а бренд и модель можно выбрать из списка или ввести вручную.</string>
     <string name="field_request_number">Номер заявки</string>

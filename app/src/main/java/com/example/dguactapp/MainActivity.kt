@@ -39,6 +39,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -128,6 +129,15 @@ private fun DguActApp() {
     var selectedActId by rememberSaveable { mutableLongStateOf(-1L) }
     val selectedAct = savedActs.firstOrNull { it.id == selectedActId }
 
+    fun deleteAct(act: ActRecord) {
+        val deletedAct = ActStorage.deleteAct(context, act.id) ?: return
+        deletedAct.photos.forEach(PhotoStorage::deletePhoto)
+        savedActs.removeAll { it.id == act.id }
+        if (selectedActId == act.id) {
+            selectedActId = -1L
+        }
+    }
+
     when (AppScreen.valueOf(currentScreen)) {
         AppScreen.Start -> StartScreen(
             onNewActClick = {
@@ -165,14 +175,19 @@ private fun DguActApp() {
             onActClick = { act ->
                 selectedActId = act.id
                 currentScreen = AppScreen.ActDetails.name
-            }
+            },
+            onDeleteAct = { act -> deleteAct(act) }
         )
 
         AppScreen.ActDetails -> if (selectedAct != null) {
             ActDetailsScreen(
                 act = selectedAct,
                 onBackClick = { currentScreen = AppScreen.ActsList.name },
-                onEditClick = { currentScreen = AppScreen.NewAct.name }
+                onEditClick = { currentScreen = AppScreen.NewAct.name },
+                onDeleteAct = { act ->
+                    deleteAct(act)
+                    currentScreen = AppScreen.ActsList.name
+                }
             )
         } else {
             ActsListScreen(
@@ -181,7 +196,8 @@ private fun DguActApp() {
                 onActClick = { act ->
                     selectedActId = act.id
                     currentScreen = AppScreen.ActDetails.name
-                }
+                },
+                onDeleteAct = { act -> deleteAct(act) }
             )
         }
     }
@@ -1020,9 +1036,11 @@ private fun ChecklistSectionEditor(
 fun ActsListScreen(
     acts: List<ActRecord>,
     onBackClick: () -> Unit = {},
-    onActClick: (ActRecord) -> Unit = {}
+    onActClick: (ActRecord) -> Unit = {},
+    onDeleteAct: (ActRecord) -> Unit = {}
 ) {
     val context = LocalContext.current
+    var actToDelete by remember { mutableStateOf<ActRecord?>(null) }
     BackHandler(onBack = onBackClick)
 
     Scaffold(
@@ -1134,11 +1152,43 @@ fun ActsListScreen(
                                 title = stringResource(id = R.string.diagnosis_type_title),
                                 value = act.diagnosisType.title
                             )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(onClick = { actToDelete = act }) {
+                                    Text(text = stringResource(id = R.string.delete_button))
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    if (actToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { actToDelete = null },
+            text = {
+                Text(text = stringResource(id = R.string.delete_act_confirmation))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        actToDelete?.let(onDeleteAct)
+                        actToDelete = null
+                    }
+                ) {
+                    Text(text = stringResource(id = R.string.delete_button))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { actToDelete = null }) {
+                    Text(text = stringResource(id = R.string.cancel_button))
+                }
+            }
+        )
     }
 }
 
@@ -1147,10 +1197,12 @@ fun ActsListScreen(
 fun ActDetailsScreen(
     act: ActRecord,
     onBackClick: () -> Unit = {},
-    onEditClick: () -> Unit = {}
+    onEditClick: () -> Unit = {},
+    onDeleteAct: (ActRecord) -> Unit = {}
 ) {
     val context = LocalContext.current
     var generatedPdfUri by remember(act.id) { mutableStateOf<Uri?>(null) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     BackHandler(onBack = onBackClick)
 
     fun generatePdf(mode: ActPdfGenerator.PdfMode): Uri? {
@@ -1201,6 +1253,9 @@ fun ActDetailsScreen(
                 actions = {
                     TextButton(onClick = onEditClick) {
                         Text(text = stringResource(id = R.string.edit_button))
+                    }
+                    TextButton(onClick = { showDeleteConfirmation = true }) {
+                        Text(text = stringResource(id = R.string.delete_button))
                     }
                 }
             )
@@ -1364,6 +1419,30 @@ fun ActDetailsScreen(
                 Text(text = stringResource(id = R.string.share_pdf_button))
             }
         }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            text = {
+                Text(text = stringResource(id = R.string.delete_act_confirmation))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onDeleteAct(act)
+                    }
+                ) {
+                    Text(text = stringResource(id = R.string.delete_button))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text(text = stringResource(id = R.string.cancel_button))
+                }
+            }
+        )
     }
 }
 

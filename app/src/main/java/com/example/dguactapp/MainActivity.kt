@@ -99,7 +99,8 @@ import java.util.Locale
 private enum class AppScreen {
     Start,
     NewAct,
-    ActsList,
+    RequestsList,
+    RequestDetails,
     ActDetails
 }
 
@@ -122,84 +123,141 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun DguActApp() {
     val context = LocalContext.current
-    val savedActs = remember {
-        androidx.compose.runtime.mutableStateListOf<ActRecord>().apply {
-            addAll(ActStorage.loadActs(context))
-        }
+    val savedActs = remember { androidx.compose.runtime.mutableStateListOf<ActRecord>() }
+    val savedRequests = remember { androidx.compose.runtime.mutableStateListOf<RequestRecord>() }
+
+    LaunchedEffect(Unit) {
+        savedActs.clear()
+        savedActs.addAll(ActStorage.loadActs(context))
+        savedRequests.clear()
+        savedRequests.addAll(RequestStorage.loadRequests(context, savedActs))
     }
+
     var currentScreen by rememberSaveable { mutableStateOf(AppScreen.Start.name) }
     var selectedActId by rememberSaveable { mutableLongStateOf(-1L) }
+    var selectedRequestId by rememberSaveable { mutableLongStateOf(-1L) }
+    var requestedDocumentType by rememberSaveable { mutableStateOf(DocumentType.TransferAcceptanceAct.storageValue) }
+
     val selectedAct = savedActs.firstOrNull { it.id == selectedActId }
+    val selectedRequest = savedRequests.firstOrNull { it.id == selectedRequestId }
+
+    fun upsertRequest(request: RequestRecord) {
+        RequestStorage.upsertRequest(context, request)
+        val existingIndex = savedRequests.indexOfFirst { it.id == request.id }
+        if (existingIndex >= 0) savedRequests.removeAt(existingIndex)
+        savedRequests.add(0, request)
+    }
 
     fun deleteAct(act: ActRecord) {
         val deletedAct = ActStorage.deleteAct(context, act.id) ?: return
         deletedAct.photos.forEach(PhotoStorage::deletePhoto)
         savedActs.removeAll { it.id == act.id }
-        if (selectedActId == act.id) {
-            selectedActId = -1L
+        if (selectedActId == act.id) selectedActId = -1L
+
+        val hasMoreActs = savedActs.any { it.requestId == deletedAct.requestId }
+        if (!hasMoreActs) {
+            RequestStorage.deleteRequest(context, deletedAct.requestId)
+            savedRequests.removeAll { it.id == deletedAct.requestId }
+            if (selectedRequestId == deletedAct.requestId) selectedRequestId = -1L
         }
     }
 
     when (AppScreen.valueOf(currentScreen)) {
         AppScreen.Start -> StartScreen(
-            onNewActClick = {
-                selectedActId = -1L
-                currentScreen = AppScreen.NewAct.name
+            onCreateRequestClick = {
+                val requestDatePart = currentDateForRequestNumber()
+                val nextSequence = ActStorage.nextSequence(savedActs, savedRequests)
+                val newRequest = RequestRecord(
+                    id = System.currentTimeMillis(),
+                    requestNumber = "REQ-$nextSequence-$requestDatePart",
+                    createdAt = currentDateDisplay(),
+                    date = currentDateDisplay(),
+                    customer = "",
+                    phone = "",
+                    customerAddress = "",
+                    equipmentCode = "",
+                    equipmentName = "",
+                    brand = "",
+                    model = "",
+                    serialNumber = ""
+                )
+                upsertRequest(newRequest)
+                selectedRequestId = newRequest.id
+                currentScreen = AppScreen.RequestDetails.name
             },
-            onActsListClick = { currentScreen = AppScreen.ActsList.name }
+            onOpenRequestsClick = { currentScreen = AppScreen.RequestsList.name }
         )
 
         AppScreen.NewAct -> NewActScreen(
             existingAct = selectedAct,
+            existingRequest = selectedRequest,
             existingActs = savedActs,
+            initialDocumentType = DocumentType.fromStorageValue(requestedDocumentType),
             onBackClick = {
-                currentScreen = if (selectedAct != null) {
-                    AppScreen.ActDetails.name
-                } else {
-                    AppScreen.Start.name
-                }
+                currentScreen = if (selectedAct != null) AppScreen.ActDetails.name else AppScreen.RequestDetails.name
             },
-            onSaveClick = { act ->
+            onSaveClick = { act, request ->
+                upsertRequest(request)
                 ActStorage.upsertAct(context, act)
                 val existingIndex = savedActs.indexOfFirst { it.id == act.id }
-                if (existingIndex >= 0) {
-                    savedActs.removeAt(existingIndex)
-                }
+                if (existingIndex >= 0) savedActs.removeAt(existingIndex)
                 savedActs.add(0, act)
+                selectedRequestId = request.id
                 selectedActId = act.id
                 currentScreen = AppScreen.ActDetails.name
             }
         )
 
-        AppScreen.ActsList -> ActsListScreen(
+        AppScreen.RequestsList -> RequestsListScreen(
+            requests = savedRequests,
             acts = savedActs,
             onBackClick = { currentScreen = AppScreen.Start.name },
-            onActClick = { act ->
-                selectedActId = act.id
-                currentScreen = AppScreen.ActDetails.name
-            },
-            onDeleteAct = { act -> deleteAct(act) }
+            onRequestClick = { request ->
+                selectedRequestId = request.id
+                currentScreen = AppScreen.RequestDetails.name
+            }
         )
+
+        AppScreen.RequestDetails -> if (selectedRequest != null) {
+            RequestDetailsScreen(
+                request = selectedRequest,
+                acts = savedActs.filter { it.requestId == selectedRequest.id }.sortedByDescending { it.createdAt },
+                onBackClick = { currentScreen = AppScreen.RequestsList.name },
+                onCreateDocument = { docType ->
+                    requestedDocumentType = docType.storageValue
+                    selectedActId = -1L
+                    currentScreen = AppScreen.NewAct.name
+                },
+                onOpenAct = { act ->
+                    selectedActId = act.id
+                    currentScreen = AppScreen.ActDetails.name
+                }
+            )
+        } else {
+            RequestsListScreen(
+                requests = savedRequests,
+                acts = savedActs,
+                onBackClick = { currentScreen = AppScreen.Start.name },
+                onRequestClick = { request ->
+                    selectedRequestId = request.id
+                    currentScreen = AppScreen.RequestDetails.name
+                }
+            )
+        }
 
         AppScreen.ActDetails -> if (selectedAct != null) {
             ActDetailsScreen(
                 act = selectedAct,
-                onBackClick = { currentScreen = AppScreen.ActsList.name },
-                onEditClick = { currentScreen = AppScreen.NewAct.name },
+                onBackClick = { currentScreen = AppScreen.RequestDetails.name },
+                onEditClick = {
+                    selectedRequestId = selectedAct.requestId
+                    requestedDocumentType = selectedAct.documentType.storageValue
+                    currentScreen = AppScreen.NewAct.name
+                },
                 onDeleteAct = { act ->
                     deleteAct(act)
-                    currentScreen = AppScreen.ActsList.name
+                    currentScreen = AppScreen.RequestDetails.name
                 }
-            )
-        } else {
-            ActsListScreen(
-                acts = savedActs,
-                onBackClick = { currentScreen = AppScreen.Start.name },
-                onActClick = { act ->
-                    selectedActId = act.id
-                    currentScreen = AppScreen.ActDetails.name
-                },
-                onDeleteAct = { act -> deleteAct(act) }
             )
         }
     }
@@ -207,8 +265,8 @@ private fun DguActApp() {
 
 @Composable
 fun StartScreen(
-    onNewActClick: () -> Unit = {},
-    onActsListClick: () -> Unit = {}
+    onCreateRequestClick: () -> Unit = {},
+    onOpenRequestsClick: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -255,7 +313,7 @@ fun StartScreen(
             )
             Spacer(modifier = Modifier.height(28.dp))
             Button(
-                onClick = onNewActClick,
+                onClick = onCreateRequestClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
@@ -266,21 +324,21 @@ fun StartScreen(
                 )
             ) {
                 Text(
-                    text = stringResource(id = R.string.new_act_button),
+                    text = stringResource(id = R.string.new_request_button),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
             OutlinedButton(
-                onClick = onActsListClick,
+                onClick = onOpenRequestsClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
                 shape = RoundedCornerShape(18.dp)
             ) {
                 Text(
-                    text = stringResource(id = R.string.acts_list_button),
+                    text = stringResource(id = R.string.open_request_button),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -303,9 +361,11 @@ fun StartScreen(
 @Composable
 fun NewActScreen(
     existingAct: ActRecord? = null,
+    existingRequest: RequestRecord? = null,
     existingActs: List<ActRecord> = emptyList(),
+    initialDocumentType: DocumentType = DocumentType.DiagnosticAct,
     onBackClick: () -> Unit = {},
-    onSaveClick: (ActRecord) -> Unit = {}
+    onSaveClick: (ActRecord, RequestRecord) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val today = remember { currentDateDisplay() }
@@ -313,39 +373,39 @@ fun NewActScreen(
     val nextSequence = remember(existingActs) { ActStorage.nextSequence(existingActs) }
 
     var equipmentCode by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.equipmentCode.orEmpty())
+        mutableStateOf(existingAct?.equipmentCode ?: existingRequest?.equipmentCode.orEmpty())
     }
     var documentType by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.documentType ?: DocumentType.DiagnosticAct)
+        mutableStateOf(existingAct?.documentType ?: initialDocumentType)
     }
     val createdAt = rememberSaveable(existingAct?.id) {
-        existingAct?.createdAt?.ifBlank { today } ?: today
+        existingAct?.createdAt?.ifBlank { today } ?: existingRequest?.createdAt?.ifBlank { today } ?: today
     }
     var equipmentName by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.equipmentName.orEmpty())
+        mutableStateOf(existingAct?.equipmentName ?: existingRequest?.equipmentName.orEmpty())
     }
     var date by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.date?.ifBlank { today } ?: today)
+        mutableStateOf(existingAct?.date?.ifBlank { today } ?: existingRequest?.date?.ifBlank { today } ?: today)
     }
     var customer by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.customer.orEmpty())
+        mutableStateOf(existingAct?.customer ?: existingRequest?.customer.orEmpty())
     }
     var phone by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.phone.orEmpty())
+        mutableStateOf(existingAct?.phone ?: existingRequest?.phone.orEmpty())
     }
     var customerAddress by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.customerAddress.orEmpty())
+        mutableStateOf(existingAct?.customerAddress ?: existingRequest?.customerAddress.orEmpty())
     }
     var brandSelection by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.brand.orEmpty())
+        mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
     }
     var customBrand by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var modelSelection by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.model.orEmpty())
+        mutableStateOf(existingAct?.model ?: existingRequest?.model.orEmpty())
     }
     var customModel by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var serialNumber by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.serialNumber.orEmpty())
+        mutableStateOf(existingAct?.serialNumber ?: existingRequest?.serialNumber.orEmpty())
     }
     var operatingTime by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.operatingTime.orEmpty())
@@ -521,10 +581,17 @@ fun NewActScreen(
         }
     }
 
-    val requestNumber = remember(existingAct?.requestNumber, equipmentCode, nextSequence, requestDatePart) {
-        existingAct?.requestNumber.orEmpty().ifBlank {
-            if (equipmentCode.isBlank()) "" else "$equipmentCode-$nextSequence-$requestDatePart"
-        }
+    val requestNumber = remember(
+        existingAct?.requestNumber,
+        existingRequest?.requestNumber,
+        equipmentCode,
+        nextSequence,
+        requestDatePart
+    ) {
+        existingAct?.requestNumber
+            ?.ifBlank { null }
+            ?: existingRequest?.requestNumber?.ifBlank { null }
+            ?: if (equipmentCode.isBlank()) "" else "$equipmentCode-$nextSequence-$requestDatePart"
     }
 
     val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
@@ -1005,16 +1072,29 @@ fun NewActScreen(
                             executorSignature = executorSignatureSaved.toList(),
                             directorSignature = directorSignatureSaved.toList()
                         )
+                        val requestRecord = RequestRecord(
+                            id = existingRequest?.id ?: existingAct?.requestId ?: System.currentTimeMillis(),
+                            requestNumber = requestNumber,
+                            createdAt = createdAt,
+                            date = date.ifBlank { context.getString(R.string.default_date_value) },
+                            customer = customer.ifBlank { context.getString(R.string.default_customer_value) },
+                            phone = phone,
+                            customerAddress = customerAddress,
+                            equipmentCode = equipmentCode,
+                            equipmentName = equipmentName,
+                            brand = resolvedBrand,
+                            model = resolvedModel,
+                            serialNumber = serialNumber
+                        )
                         val act = ActRecord(
                             id = existingAct?.id ?: System.currentTimeMillis(),
+                            requestId = requestRecord.id,
                             documentType = documentType,
                             status = actStatus,
                             createdAt = createdAt,
-                            requestNumber = requestNumber,
-                            date = date.ifBlank { context.getString(R.string.default_date_value) },
-                            customer = customer.ifBlank {
-                                context.getString(R.string.default_customer_value)
-                            },
+                            requestNumber = requestRecord.requestNumber,
+                            date = requestRecord.date,
+                            customer = requestRecord.customer,
                             phone = phone,
                             customerAddress = customerAddress,
                             equipmentCode = equipmentCode,
@@ -1040,7 +1120,7 @@ fun NewActScreen(
                         )
                         PhotoStorage.deleteMissingPhotos(existingAct?.photos.orEmpty(), act.photos)
                         saveCompleted = true
-                        onSaveClick(act)
+                        onSaveClick(act, requestRecord)
                         Toast.makeText(
                             context,
                             if (existingAct == null) {
@@ -1143,14 +1223,12 @@ private fun ChecklistSectionEditor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActsListScreen(
+fun RequestsListScreen(
+    requests: List<RequestRecord>,
     acts: List<ActRecord>,
     onBackClick: () -> Unit = {},
-    onActClick: (ActRecord) -> Unit = {},
-    onDeleteAct: (ActRecord) -> Unit = {}
+    onRequestClick: (RequestRecord) -> Unit = {}
 ) {
-    val context = LocalContext.current
-    var actToDelete by remember { mutableStateOf<ActRecord?>(null) }
     BackHandler(onBack = onBackClick)
 
     Scaffold(
@@ -1159,12 +1237,12 @@ fun ActsListScreen(
                 title = {
                     Column {
                         Text(
-                            text = stringResource(id = R.string.acts_list_screen_title),
+                            text = stringResource(id = R.string.requests_list_screen_title),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = stringResource(id = R.string.acts_list_screen_subtitle),
+                            text = stringResource(id = R.string.requests_list_screen_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1179,7 +1257,7 @@ fun ActsListScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        if (acts.isEmpty()) {
+        if (requests.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1187,28 +1265,12 @@ fun ActsListScreen(
                     .padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.empty_list_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = stringResource(id = R.string.empty_list_text),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                Text(
+                    text = stringResource(id = R.string.empty_requests_text),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
             }
         } else {
             LazyColumn(
@@ -1219,94 +1281,124 @@ fun ActsListScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(items = acts, key = { it.id }) { act ->
+                items(items = requests, key = { it.id }) { request ->
+                    val documentsCount = acts.count { it.requestId == request.id }
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onActClick(act) },
+                            .clickable { onRequestClick(request) },
                         shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            val listRequestNumber = act.requestNumber.ifBlank {
-                                context.getString(R.string.default_request_number)
-                            }
+                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                text = listRequestNumber,
+                                text = request.requestNumber,
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                fontWeight = FontWeight.Bold
                             )
-                            InfoLine(
-                                title = stringResource(id = R.string.field_date),
-                                value = act.date
-                            )
-                            InfoLine(
-                                title = stringResource(id = R.string.field_document_type),
-                                value = act.documentType.title
-                            )
-                            InfoLine(
-                                title = stringResource(id = R.string.field_status),
-                                value = act.resolvedStatus().title
-                            )
-                            InfoLine(
-                                title = stringResource(id = R.string.field_customer),
-                                value = act.customer
-                            )
-                            InfoLine(
-                                title = stringResource(id = R.string.field_equipment_code),
-                                value = act.equipmentCode
-                            )
-                            InfoLine(
-                                title = stringResource(id = R.string.field_equipment_name),
-                                value = act.equipmentName
-                            )
-                            InfoLine(
-                                title = stringResource(id = R.string.diagnosis_type_title),
-                                value = act.diagnosisType.title
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                TextButton(onClick = { actToDelete = act }) {
-                                    Text(text = stringResource(id = R.string.delete_button))
-                                }
-                            }
+                            InfoLine(stringResource(id = R.string.field_created_at), request.createdAt)
+                            InfoLine(stringResource(id = R.string.field_customer), request.customer)
+                            InfoLine(stringResource(id = R.string.field_equipment_name), request.equipmentName)
+                            InfoLine(stringResource(id = R.string.request_documents_count), documentsCount.toString())
                         }
                     }
                 }
             }
         }
     }
+}
 
-    if (actToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { actToDelete = null },
-            text = {
-                Text(text = stringResource(id = R.string.delete_act_confirmation))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        actToDelete?.let(onDeleteAct)
-                        actToDelete = null
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RequestDetailsScreen(
+    request: RequestRecord,
+    acts: List<ActRecord>,
+    onBackClick: () -> Unit = {},
+    onCreateDocument: (DocumentType) -> Unit = {},
+    onOpenAct: (ActRecord) -> Unit = {}
+) {
+    BackHandler(onBack = onBackClick)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = stringResource(id = R.string.request_details_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = request.requestNumber,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                ) {
-                    Text(text = stringResource(id = R.string.delete_button))
+                },
+                navigationIcon = {
+                    TextButton(onClick = onBackClick) {
+                        Text(text = stringResource(id = R.string.back_button))
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { actToDelete = null }) {
-                    Text(text = stringResource(id = R.string.cancel_button))
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                DetailCard(title = stringResource(id = R.string.act_main_info_title)) {
+                    InfoLine(stringResource(id = R.string.field_request_number), request.requestNumber)
+                    InfoLine(stringResource(id = R.string.field_created_at), request.createdAt)
+                    InfoLine(stringResource(id = R.string.field_date), request.date)
+                    InfoLine(stringResource(id = R.string.field_customer), request.customer)
+                    InfoLine(stringResource(id = R.string.field_phone), request.phone)
+                    InfoLine(stringResource(id = R.string.field_equipment_code), request.equipmentCode)
+                    InfoLine(stringResource(id = R.string.field_equipment_name), request.equipmentName)
+                    InfoLine(stringResource(id = R.string.field_brand), request.brand)
+                    InfoLine(stringResource(id = R.string.field_model), request.model)
+                    InfoLine(stringResource(id = R.string.field_serial_number), request.serialNumber)
                 }
             }
-        )
+            item {
+                DetailCard(title = stringResource(id = R.string.request_actions_title)) {
+                    Button(onClick = { onCreateDocument(DocumentType.TransferAcceptanceAct) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(text = stringResource(id = R.string.create_transfer_act_button))
+                    }
+                    OutlinedButton(onClick = { onCreateDocument(DocumentType.DiagnosticAct) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(text = stringResource(id = R.string.create_diagnostic_act_button))
+                    }
+                    OutlinedButton(onClick = { onCreateDocument(DocumentType.AcceptanceAct) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(text = stringResource(id = R.string.create_acceptance_act_button))
+                    }
+                }
+            }
+            item {
+                DetailCard(title = stringResource(id = R.string.request_documents_title)) {
+                    if (acts.isEmpty()) {
+                        Text(text = stringResource(id = R.string.request_documents_empty))
+                    } else {
+                        acts.forEach { act ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenAct(act) }
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(text = act.documentType.title)
+                                Text(text = act.date)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2181,6 +2273,7 @@ private fun NewActScreenPreview() {
         NewActScreen(
             existingAct = ActRecord(
                 id = 1L,
+                requestId = 1L,
                 requestNumber = "DGU-18-230326",
                 date = "23.03.2026",
                 customer = "ООО «Энерго Сервис»",
@@ -2213,30 +2306,26 @@ private fun NewActScreenPreview() {
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
-private fun ActsListScreenPreview() {
+private fun RequestsListScreenPreview() {
     DguActAppTheme(darkTheme = false) {
-        ActsListScreen(
-            acts = listOf(
-                ActRecord(
+        RequestsListScreen(
+            requests = listOf(
+                RequestRecord(
                     id = 1L,
                     requestNumber = "DGU-18-230326",
+                    createdAt = "23.03.2026",
                     date = "23.03.2026",
                     customer = "ООО «Энерго Сервис»",
+                    phone = "+7 900 000-00-00",
                     customerAddress = "г. Москва, ул. Центральная, д. 10",
                     equipmentCode = "DGU",
                     equipmentName = "дизельный генератор",
                     brand = "FG Wilson",
                     model = "P110-3",
-                    serialNumber = "SN-12345",
-                    operatingTime = "1450 моточасов",
-                    completeness = "Базовая комплектация",
-                    externalCondition = "Без серьёзных повреждений",
-                    malfunctionDescription = "Требуется диагностика системы запуска",
-                    diagnosisType = DiagnosisType.Primary,
-                    checklistItems = DiagnosticChecklistCatalog.stateFor(DiagnosisType.Primary),
-                    preliminaryConclusion = "Требуется первичная диагностика"
+                    serialNumber = "SN-12345"
                 )
-            )
+            ),
+            acts = emptyList()
         )
     }
 }

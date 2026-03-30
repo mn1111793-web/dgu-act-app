@@ -4,8 +4,24 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class RequestRecord(
+    val id: Long,
+    val requestNumber: String,
+    val createdAt: String,
+    val date: String,
+    val customer: String,
+    val phone: String,
+    val customerAddress: String,
+    val equipmentCode: String,
+    val equipmentName: String,
+    val brand: String,
+    val model: String,
+    val serialNumber: String
+)
+
 data class ActRecord(
     val id: Long,
+    val requestId: Long,
     val documentType: DocumentType = DocumentType.DiagnosticAct,
     val status: ActStatus = ActStatus.Draft,
     val createdAt: String = "",
@@ -73,13 +89,17 @@ object ActStorage {
         return actToDelete
     }
 
-    fun nextSequence(acts: List<ActRecord>): Int = acts.maxOfOrNull { act ->
-        requestNumberRegex.matchEntire(act.requestNumber)
+    fun nextSequence(acts: List<ActRecord>, requests: List<RequestRecord> = emptyList()): Int {
+        val actsMax = acts.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
+        val reqMax = requests.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
+        return maxOf(actsMax, reqMax) + 1
+    }
+
+    private fun extractSequence(requestNumber: String): Int? =
+        requestNumberRegex.matchEntire(requestNumber)
             ?.groupValues
             ?.getOrNull(1)
             ?.toIntOrNull()
-            ?: 0
-    }?.plus(1) ?: 1
 
     private fun saveActs(context: Context, acts: List<ActRecord>) {
         val jsonArray = JSONArray()
@@ -92,6 +112,7 @@ object ActStorage {
 
     private fun ActRecord.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
+        put("requestId", requestId)
         put("documentType", documentType.storageValue)
         put("status", status.storageValue)
         put("createdAt", createdAt)
@@ -191,8 +212,10 @@ object ActStorage {
             }
             .orEmpty()
 
+        val fallbackId = optLong("id")
         val legacyRecord = ActRecord(
-            id = optLong("id"),
+            id = fallbackId,
+            requestId = optLong("requestId", fallbackId),
             documentType = documentType,
             status = status,
             createdAt = optString("createdAt").ifBlank { optString("date") },
@@ -260,8 +283,8 @@ object ActStorage {
                         val pointObject = strokeArray.optJSONObject(pointIndex) ?: continue
                         add(
                             SignaturePoint(
-                                x = pointObject.optDouble("x").toFloat(),
-                                y = pointObject.optDouble("y").toFloat()
+                                x = pointObject.optDouble("x", 0.0).toFloat(),
+                                y = pointObject.optDouble("y", 0.0).toFloat()
                             )
                         )
                     }
@@ -273,3 +296,106 @@ object ActStorage {
         }
     }
 }
+
+object RequestStorage {
+    private const val preferencesName = "saved_requests"
+    private const val requestsKey = "requests_json"
+
+    fun loadRequests(context: Context, acts: List<ActRecord>): List<RequestRecord> {
+        val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val rawJson = prefs.getString(requestsKey, null).orEmpty()
+        val persisted = if (rawJson.isBlank()) {
+            emptyList()
+        } else {
+            runCatching {
+                val jsonArray = JSONArray(rawJson)
+                buildList {
+                    for (index in 0 until jsonArray.length()) {
+                        val item = jsonArray.optJSONObject(index) ?: continue
+                        add(item.toRequestRecord())
+                    }
+                }
+            }.getOrDefault(emptyList())
+        }
+
+        if (persisted.isNotEmpty()) return persisted
+
+        val migrated = acts
+            .groupBy { it.requestId }
+            .mapNotNull { (_, requestActs) -> requestActs.firstOrNull()?.toRequestRecord() }
+            .sortedByDescending { it.id }
+
+        if (migrated.isNotEmpty()) {
+            saveRequests(context, migrated)
+        }
+
+        return migrated
+    }
+
+    fun upsertRequest(context: Context, request: RequestRecord) {
+        val updated = loadRequests(context, ActStorage.loadActs(context))
+            .filterNot { it.id == request.id }
+            .toMutableList()
+            .apply { add(0, request) }
+        saveRequests(context, updated)
+    }
+
+    fun deleteRequest(context: Context, requestId: Long) {
+        val updated = loadRequests(context, ActStorage.loadActs(context)).filterNot { it.id == requestId }
+        saveRequests(context, updated)
+    }
+
+    private fun saveRequests(context: Context, requests: List<RequestRecord>) {
+        val jsonArray = JSONArray()
+        requests.forEach { request -> jsonArray.put(request.toJson()) }
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .putString(requestsKey, jsonArray.toString())
+            .apply()
+    }
+
+    private fun RequestRecord.toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("requestNumber", requestNumber)
+        put("createdAt", createdAt)
+        put("date", date)
+        put("customer", customer)
+        put("phone", phone)
+        put("customerAddress", customerAddress)
+        put("equipmentCode", equipmentCode)
+        put("equipmentName", equipmentName)
+        put("brand", brand)
+        put("model", model)
+        put("serialNumber", serialNumber)
+    }
+
+    private fun JSONObject.toRequestRecord(): RequestRecord = RequestRecord(
+        id = optLong("id"),
+        requestNumber = optString("requestNumber"),
+        createdAt = optString("createdAt"),
+        date = optString("date"),
+        customer = optString("customer"),
+        phone = optString("phone"),
+        customerAddress = optString("customerAddress"),
+        equipmentCode = optString("equipmentCode"),
+        equipmentName = optString("equipmentName"),
+        brand = optString("brand"),
+        model = optString("model"),
+        serialNumber = optString("serialNumber")
+    )
+}
+
+private fun ActRecord.toRequestRecord(): RequestRecord = RequestRecord(
+    id = requestId,
+    requestNumber = requestNumber,
+    createdAt = createdAt,
+    date = date,
+    customer = customer,
+    phone = phone,
+    customerAddress = customerAddress,
+    equipmentCode = equipmentCode,
+    equipmentName = equipmentName,
+    brand = brand,
+    model = model,
+    serialNumber = serialNumber
+)

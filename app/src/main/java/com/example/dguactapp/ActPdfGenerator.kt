@@ -36,6 +36,20 @@ object ActPdfGenerator {
         "5.4. Лицо, подписывающее Акт от имени Заказчика, подтверждает наличие необходимых полномочий."
     )
 
+    private val transferSubjectSection = listOf(
+        "1.1. Настоящий Акт подтверждает факт передачи оборудования Заказчиком Исполнителю для проведения диагностики.",
+        "1.2. Передаваемое оборудование принимается Исполнителем во временное хранение на период диагностики."
+    )
+    private val transferAcceptanceSection = listOf(
+        "3.1. Оборудование принято в состоянии, указанном Заказчиком при передаче.",
+        "3.2. Комплектность и внешнее состояние фиксируются на основании осмотра при приёме.",
+        "3.3. Выявленные недостатки и дополнительные замечания указываются в тексте настоящего Акта."
+    )
+    private val transferStorageSection = listOf(
+        "4.1. До завершения диагностики оборудование хранится у Исполнителя с соблюдением стандартных условий хранения.",
+        "4.2. Доступ к оборудованию и любые работы осуществляются уполномоченными сотрудниками Исполнителя."
+    )
+
     fun generate(context: Context, act: ActRecord, mode: PdfMode = PdfMode.Filled): Result<File> = runCatching {
         val pdfDirectory = File(context.filesDir, "act_pdfs")
         if (!pdfDirectory.exists() && !pdfDirectory.mkdirs()) {
@@ -180,69 +194,119 @@ object ActPdfGenerator {
             y += 4f
         }
 
-        drawLine("АКТ ДИАГНОСТИКИ ОБОРУДОВАНИЯ", titlePaint)
-        if (mode == PdfMode.Blank) {
-            drawLine("Пустой бланк для ручного заполнения", smallPaint)
-        }
-        y += 6f
-
-        drawSection("1. ОБЩИЕ СВЕДЕНИЯ")
-        drawKeyValue("Номер заявки", act.requestNumber)
-        drawKeyValue("Дата", act.date)
-        drawKeyValue("Заказчик", act.customer)
-        drawKeyValue("Адрес заказчика", act.customerAddress)
-
-        y += 2f
-        drawSection("2. СВЕДЕНИЯ ОБ ОБОРУДОВАНИИ")
-        drawKeyValue("Код оборудования", act.equipmentCode)
-        drawKeyValue("Наименование оборудования", act.equipmentName)
-        drawKeyValue("Бренд", act.brand)
-        drawKeyValue("Модель", act.model)
-        drawKeyValue("Серийный номер", act.serialNumber)
-        drawKeyValue("Наработка", act.operatingTime)
-
-        y += 2f
-        drawSection("3. РЕЗУЛЬТАТЫ ДИАГНОСТИКИ")
-        drawKeyValue("Тип диагностики", act.diagnosisType.title)
-        drawKeyValue("Комплектность", act.completeness, blankLines = 2)
-        drawKeyValue("Внешнее состояние", act.externalCondition, blankLines = 2)
-        drawKeyValue("Описание неисправности", act.malfunctionDescription, blankLines = 3)
-
-        if (mode == PdfMode.Filled && act.checklistItems.isNotEmpty()) {
-            drawLine("Данные формы:", sectionPaint)
-            act.checklistItems.forEachIndexed { index, item ->
-                val status = buildString {
-                    append(if (item.checked) "Проверено" else "Не проверено")
-                    append(", ")
-                    append(if (item.faulty) "Есть замечания" else "Без замечаний")
-                }
-                drawParagraph("${index + 1}. ${item.title}: $status", smallPaint, after = 2f)
-                if (item.comment.isNotBlank()) {
-                    drawParagraph("Комментарий: ${item.comment}", smallPaint, after = 2f)
-                }
+        fun drawSharedHeader(title: String, subtitle: String? = null) {
+            drawLine(title, titlePaint)
+            if (mode == PdfMode.Blank) {
+                drawLine("Пустой бланк для ручного заполнения", smallPaint)
+            } else if (!subtitle.isNullOrBlank()) {
+                drawLine(subtitle, smallPaint)
             }
-            y += 4f
+            y += 6f
         }
 
-        drawKeyValue("Предварительное заключение", act.preliminaryConclusion, blankLines = 3)
-        if (mode == PdfMode.Filled && act.diagnosisType == DiagnosisType.Advanced) {
-            drawKeyValue("Конкретная причина неисправности", act.rootCause, blankLines = 2)
-            drawKeyValue("Перечень требуемых работ", act.requiredWorks, blankLines = 2)
-        } else if (mode == PdfMode.Blank) {
-            drawKeyValue("Конкретная причина неисправности", "", blankLines = 2)
-            drawKeyValue("Перечень требуемых работ", "", blankLines = 2)
+        fun drawBaseInfoSections() {
+            drawSection("Дата и место")
+            drawKeyValue("Номер заявки", act.requestNumber)
+            drawKeyValue("Дата", act.date)
+            drawKeyValue("Место составления", act.customerAddress)
+            drawSection("Исполнитель")
+            drawKeyValue("Организация", "Исполнитель")
+            drawSection("Заказчик")
+            drawKeyValue("Заказчик", act.customer)
+            drawKeyValue("Телефон", act.phone)
+            drawKeyValue("Адрес заказчика", act.customerAddress)
+            y += 2f
+            drawSection("2. Сведения об оборудовании")
+            drawKeyValue("Код оборудования", act.equipmentCode)
+            drawKeyValue("Наименование оборудования", act.equipmentName)
+            drawKeyValue("Бренд", act.brand)
+            drawKeyValue("Модель", act.model)
+            drawKeyValue("Серийный номер", act.serialNumber)
+            drawKeyValue("Наработка", act.operatingTime)
         }
 
-        drawSection("4. ПРАВОВЫЕ УСЛОВИЯ")
-        legalSection.take(5).forEach { drawParagraph(it) }
+        drawSharedHeader(
+            title = when (act.documentType) {
+                DocumentType.DiagnosticAct -> "АКТ ДИАГНОСТИКИ ОБОРУДОВАНИЯ"
+                DocumentType.TransferAcceptanceAct -> "АКТ ПРИЁМА-ПЕРЕДАЧИ ОБОРУДОВАНИЯ НА ДИАГНОСТИКУ"
+                DocumentType.AcceptanceAct -> "АКТ СДАЧИ-ПРИЁМА РАБОТ"
+            },
+            subtitle = act.documentType.title
+        )
 
-        drawSection("5. ПОДПИСАНИЕ АКТА")
-        legalSection.drop(5).forEach { drawParagraph(it) }
+        drawBaseInfoSections()
 
-        drawSection("6. ХРАНЕНИЕ ОБОРУДОВАНИЯ")
-        drawParagraph("На период нахождения оборудования у Исполнителя оно хранится на складе / в ремонтной зоне Исполнителя.")
+        when (act.documentType) {
+            DocumentType.DiagnosticAct -> {
+                y += 2f
+                drawSection("3. РЕЗУЛЬТАТЫ ДИАГНОСТИКИ")
+                drawKeyValue("Тип диагностики", act.diagnosisType.title)
+                drawKeyValue("Комплектность", act.completeness, blankLines = 2)
+                drawKeyValue("Внешнее состояние", act.externalCondition, blankLines = 2)
+                drawKeyValue("Описание неисправности", act.malfunctionDescription, blankLines = 3)
 
-        drawSection("7. ПОДПИСИ СТОРОН")
+                if (mode == PdfMode.Filled && act.checklistItems.isNotEmpty()) {
+                    drawLine("Данные формы:", sectionPaint)
+                    act.checklistItems.forEachIndexed { index, item ->
+                        val status = buildString {
+                            append(if (item.checked) "Проверено" else "Не проверено")
+                            append(", ")
+                            append(if (item.faulty) "Есть замечания" else "Без замечаний")
+                        }
+                        drawParagraph("${index + 1}. ${item.title}: $status", smallPaint, after = 2f)
+                        if (item.comment.isNotBlank()) {
+                            drawParagraph("Комментарий: ${item.comment}", smallPaint, after = 2f)
+                        }
+                    }
+                    y += 4f
+                }
+
+                drawKeyValue("Предварительное заключение", act.preliminaryConclusion, blankLines = 3)
+                if (mode == PdfMode.Filled && act.diagnosisType == DiagnosisType.Advanced) {
+                    drawKeyValue("Конкретная причина неисправности", act.rootCause, blankLines = 2)
+                    drawKeyValue("Перечень требуемых работ", act.requiredWorks, blankLines = 2)
+                } else if (mode == PdfMode.Blank) {
+                    drawKeyValue("Конкретная причина неисправности", "", blankLines = 2)
+                    drawKeyValue("Перечень требуемых работ", "", blankLines = 2)
+                }
+
+                drawSection("4. ПРАВОВЫЕ УСЛОВИЯ")
+                legalSection.take(5).forEach { drawParagraph(it) }
+                drawSection("5. ПОДПИСАНИЕ АКТА")
+                legalSection.drop(5).forEach { drawParagraph(it) }
+                drawSection("6. ХРАНЕНИЕ ОБОРУДОВАНИЯ")
+                drawParagraph("На период нахождения оборудования у Исполнителя оно хранится на складе / в ремонтной зоне Исполнителя.")
+            }
+
+            DocumentType.TransferAcceptanceAct -> {
+                drawSection("1. Предмет акта")
+                transferSubjectSection.forEach { drawParagraph(it) }
+                drawSection("3. Условия приёма")
+                transferAcceptanceSection.forEach { drawParagraph(it) }
+                drawKeyValue("Комплектность", act.completeness, blankLines = 2)
+                drawKeyValue("Внешнее состояние", act.externalCondition, blankLines = 2)
+                drawKeyValue("Описание неисправности", act.malfunctionDescription, blankLines = 3)
+                drawSection("4. Хранение оборудования")
+                transferStorageSection.forEach { drawParagraph(it) }
+                drawSection("5. Электронное подписание")
+                legalSection.drop(5).forEach { drawParagraph(it) }
+            }
+
+            DocumentType.AcceptanceAct -> {
+                drawSection("1. Предмет акта")
+                drawParagraph("1.1. Настоящий Акт подтверждает факт завершения диагностики оборудования и передачи результатов Заказчику.")
+                drawSection("3. Результат работ")
+                drawKeyValue("Выполненные работы", act.requiredWorks, blankLines = 3)
+                drawKeyValue("Заключение", act.preliminaryConclusion, blankLines = 3)
+                drawSection("4. Условия приёма")
+                drawParagraph("4.1. Заказчик принял результат работ и сведения по оборудованию без замечаний, если иное не указано ниже.")
+                drawKeyValue("Замечания заказчика", act.comment, blankLines = 2)
+                drawSection("5. Электронное подписание")
+                legalSection.drop(5).forEach { drawParagraph(it) }
+            }
+        }
+
+        drawSection("6. Подписи сторон")
         drawSignatureBlock("Заказчик", act.customerSignature)
         drawSignatureBlock("Исполнитель", act.executorSignature)
         drawSignatureBlock("Утверждено директором", act.directorSignature)

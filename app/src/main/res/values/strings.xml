@@ -30,8 +30,12 @@
     <string name="field_date_placeholder">Например, 23.03.2026</string>
     <string name="field_customer">Заказчик</string>
     <string name="field_customer_placeholder">Введите наименование заказчика</string>
+    <string name="field_customer_representative">Представитель заказчика</string>
+    <string name="field_customer_representative_placeholder">Укажите ФИО представителя заказчика</string>
     <string name="field_phone">Телефон</string>
     <string name="field_phone_placeholder">Введите телефон заказчика</string>
+    <string name="field_customer_representative_phone">Телефон представителя заказчика</string>
+    <string name="field_customer_representative_phone_placeholder">Введите телефон представителя заказчика</string>
     <string name="field_customer_address">Адрес заказчика</string>
     <string name="field_customer_address_placeholder">Укажите полный адрес</string>
     <string name="field_equipment_code">Код оборудования</string>

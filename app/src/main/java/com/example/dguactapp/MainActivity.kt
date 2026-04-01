@@ -93,6 +93,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.dguactapp.ui.theme.DguActAppTheme
+import java.io.BufferedInputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -431,6 +432,9 @@ fun NewActScreen(
         mutableStateOf(existingRequest?.enterpriseCardUri.orEmpty())
     }
     var enterpriseCardFileName by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var enterpriseCardDetectedName by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var enterpriseCardDetectedAddress by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var showEnterpriseCardDetectedDialog by rememberSaveable(existingAct?.id) { mutableStateOf(false) }
     var brandSelection by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
     }
@@ -574,6 +578,12 @@ fun NewActScreen(
             }
             enterpriseCardUri = uri.toString()
             enterpriseCardFileName = resolveFileName(context, uri)
+            val extracted = extractEnterpriseCardData(context, uri)
+            if (extracted != null) {
+                enterpriseCardDetectedName = extracted.organizationName
+                enterpriseCardDetectedAddress = extracted.organizationAddress
+                showEnterpriseCardDetectedDialog = true
+            }
         }
     }
 
@@ -789,7 +799,26 @@ fun NewActScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-
+                    OutlinedButton(
+                        onClick = {
+                            enterpriseCardLauncher.launch(
+                                arrayOf("application/pdf", "image/jpeg", "image/png")
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = stringResource(id = R.string.upload_enterprise_card))
+                    }
+                    if (enterpriseCardUri.isNotBlank()) {
+                        Text(
+                            text = stringResource(
+                                id = R.string.enterprise_card_selected,
+                                if (enterpriseCardFileName.isBlank()) enterpriseCardUri else enterpriseCardFileName
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     DropdownField(
                         value = selectedEquipment?.displayName.orEmpty(),
                         options = EquipmentCatalog.equipmentTypes.map { it.displayName },
@@ -841,26 +870,6 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_status_placeholder),
                         readOnly = true
                     )
-                    OutlinedButton(
-                        onClick = {
-                            enterpriseCardLauncher.launch(
-                                arrayOf("application/pdf", "image/jpeg", "image/png")
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = stringResource(id = R.string.upload_enterprise_card))
-                    }
-                    if (enterpriseCardUri.isNotBlank()) {
-                        Text(
-                            text = stringResource(
-                                id = R.string.enterprise_card_selected,
-                                if (enterpriseCardFileName.isBlank()) enterpriseCardUri else enterpriseCardFileName
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                     FormTextField(
                         value = organizationName,
                         onValueChange = { organizationName = it },
@@ -1412,6 +1421,50 @@ fun NewActScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
+    }
+    if (showEnterpriseCardDetectedDialog) {
+        AlertDialog(
+            onDismissRequest = { showEnterpriseCardDetectedDialog = false },
+            title = { Text(text = stringResource(id = R.string.enterprise_card_detected_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = stringResource(id = R.string.enterprise_card_detected_dialog_text),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FormTextField(
+                        value = enterpriseCardDetectedName,
+                        onValueChange = { enterpriseCardDetectedName = it },
+                        label = stringResource(id = R.string.field_organization_name),
+                        placeholder = stringResource(id = R.string.field_organization_name_placeholder)
+                    )
+                    FormTextField(
+                        value = enterpriseCardDetectedAddress,
+                        onValueChange = { enterpriseCardDetectedAddress = it },
+                        label = stringResource(id = R.string.field_organization_address),
+                        placeholder = stringResource(id = R.string.field_organization_address_placeholder),
+                        minLines = 2
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        organizationName = enterpriseCardDetectedName
+                        organizationAddress = enterpriseCardDetectedAddress
+                        showEnterpriseCardDetectedDialog = false
+                    }
+                ) {
+                    Text(text = stringResource(id = R.string.apply_enterprise_card_data))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEnterpriseCardDetectedDialog = false }) {
+                    Text(text = stringResource(id = R.string.skip_enterprise_card_data))
+                }
+            }
+        )
     }
 }
 
@@ -2564,6 +2617,53 @@ private fun resolveFileName(context: android.content.Context, uri: Uri): String 
             }
     }.getOrNull()
     return fileName.orEmpty()
+}
+
+private data class EnterpriseCardExtract(
+    val organizationName: String,
+    val organizationAddress: String
+)
+
+private fun extractEnterpriseCardData(
+    context: android.content.Context,
+    uri: Uri
+): EnterpriseCardExtract? {
+    val text = readEnterpriseCardText(context, uri)?.trim().orEmpty()
+    if (text.isBlank()) return null
+    val lines = text
+        .lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .toList()
+    if (lines.isEmpty()) return null
+
+    val name = lines.firstOrNull {
+        it.contains(Regex("""\b(ООО|ОАО|ЗАО|АО|ПАО|ИП)\b""", RegexOption.IGNORE_CASE))
+    }.orEmpty()
+    val address = lines.firstOrNull {
+        it.contains("адрес", ignoreCase = true)
+    }?.substringAfter(":", "").orEmpty().ifBlank {
+        lines.firstOrNull {
+            it.contains(Regex("""\b(г\.|город|ул\.|улица|проспект|пр-т|д\.)\b""", RegexOption.IGNORE_CASE))
+        }.orEmpty()
+    }
+
+    if (name.isBlank() && address.isBlank()) return null
+    return EnterpriseCardExtract(
+        organizationName = name,
+        organizationAddress = address
+    )
+}
+
+private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): String? {
+    return runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val buffered = BufferedInputStream(input)
+            val bytes = buffered.readBytes()
+            val decoded = bytes.toString(Charsets.UTF_8)
+            if (decoded.isNotBlank()) decoded else bytes.toString(Charsets.ISO_8859_1)
+        }
+    }.getOrNull()
 }
 
 @Preview(showBackground = true, showSystemUi = true)

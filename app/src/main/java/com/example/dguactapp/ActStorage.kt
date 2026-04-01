@@ -12,6 +12,11 @@ data class RequestRecord(
     val customer: String,
     val phone: String,
     val customerAddress: String,
+    val organizationName: String,
+    val organizationAddress: String,
+    val customerRepresentative: String,
+    val customerRepresentativePhone: String,
+    val enterpriseCardUri: String,
     val equipmentCode: String,
     val equipmentName: String,
     val brand: String,
@@ -382,6 +387,11 @@ object RequestStorage {
         put("customer", customer)
         put("phone", phone)
         put("customerAddress", customerAddress)
+        put("organizationName", organizationName)
+        put("organizationAddress", organizationAddress)
+        put("customerRepresentative", customerRepresentative)
+        put("customerRepresentativePhone", customerRepresentativePhone)
+        put("enterpriseCardUri", enterpriseCardUri)
         put("equipmentCode", equipmentCode)
         put("equipmentName", equipmentName)
         put("brand", brand)
@@ -397,6 +407,11 @@ object RequestStorage {
         customer = optString("customer"),
         phone = optString("phone"),
         customerAddress = optString("customerAddress"),
+        organizationName = optString("organizationName"),
+        organizationAddress = optString("organizationAddress"),
+        customerRepresentative = optString("customerRepresentative"),
+        customerRepresentativePhone = optString("customerRepresentativePhone"),
+        enterpriseCardUri = optString("enterpriseCardUri"),
         equipmentCode = optString("equipmentCode"),
         equipmentName = optString("equipmentName"),
         brand = optString("brand"),
@@ -413,6 +428,11 @@ private fun ActRecord.toRequestRecord(): RequestRecord = RequestRecord(
     customer = customer,
     phone = phone,
     customerAddress = customerAddress,
+    organizationName = "",
+    organizationAddress = "",
+    customerRepresentative = "",
+    customerRepresentativePhone = "",
+    enterpriseCardUri = "",
     equipmentCode = equipmentCode,
     equipmentName = equipmentName,
     brand = brand,

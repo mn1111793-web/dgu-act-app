@@ -165,11 +165,9 @@ private fun DguActApp() {
     when (AppScreen.valueOf(currentScreen)) {
         AppScreen.Start -> StartScreen(
             onCreateRequestClick = {
-                val requestDatePart = currentDateForRequestNumber()
-                val nextSequence = ActStorage.nextSequence(savedActs, savedRequests)
                 val newRequest = RequestRecord(
                     id = System.currentTimeMillis(),
-                    requestNumber = "REQ-$nextSequence-$requestDatePart",
+                    requestNumber = "",
                     createdAt = currentDateDisplay(),
                     date = currentDateDisplay(),
                     customer = "",
@@ -370,7 +368,7 @@ fun NewActScreen(
     val context = LocalContext.current
     val today = remember { currentDateDisplay() }
     val requestDatePart = remember { currentDateForRequestNumber() }
-    val nextSequence = remember(existingActs) { ActStorage.nextSequence(existingActs) }
+    val nextSequence = remember(existingActs) { ActStorage.nextSequence(context, existingActs) }
 
     var equipmentCode by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.equipmentCode ?: existingRequest?.equipmentCode.orEmpty())
@@ -709,6 +707,23 @@ fun NewActScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    DropdownField(
+                        value = selectedEquipment?.displayName.orEmpty(),
+                        options = EquipmentCatalog.equipmentTypes.map { it.displayName },
+                        label = stringResource(id = R.string.field_equipment_code),
+                        placeholder = stringResource(id = R.string.field_equipment_code_placeholder),
+                        onOptionSelected = { selectedDisplayName ->
+                            val equipment = EquipmentCatalog.equipmentTypes.firstOrNull {
+                                it.displayName == selectedDisplayName
+                            } ?: return@DropdownField
+                            equipmentCode = equipment.code
+                            equipmentName = equipment.name
+                            brandSelection = ""
+                            modelSelection = ""
+                            customBrand = ""
+                            customModel = ""
+                        }
+                    )
                     FormTextField(
                         value = requestNumber,
                         onValueChange = {},
@@ -766,23 +781,6 @@ fun NewActScreen(
                         label = stringResource(id = R.string.field_customer_address),
                         placeholder = stringResource(id = R.string.field_customer_address_placeholder),
                         minLines = 2
-                    )
-                    DropdownField(
-                        value = selectedEquipment?.displayName.orEmpty(),
-                        options = EquipmentCatalog.equipmentTypes.map { it.displayName },
-                        label = stringResource(id = R.string.field_equipment_code),
-                        placeholder = stringResource(id = R.string.field_equipment_code_placeholder),
-                        onOptionSelected = { selectedDisplayName ->
-                            val equipment = EquipmentCatalog.equipmentTypes.firstOrNull {
-                                it.displayName == selectedDisplayName
-                            } ?: return@DropdownField
-                            equipmentCode = equipment.code
-                            equipmentName = equipment.name
-                            brandSelection = ""
-                            modelSelection = ""
-                            customBrand = ""
-                            customModel = ""
-                        }
                     )
                     FormTextField(
                         value = equipmentName,

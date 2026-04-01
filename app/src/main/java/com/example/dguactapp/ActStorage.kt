@@ -55,6 +55,7 @@ data class ActRecord(
 object ActStorage {
     private const val preferencesName = "saved_acts"
     private const val actsKey = "acts_json"
+    private const val lastSequenceKey = "last_sequence_number"
     private val requestNumberRegex = Regex("^[A-Z]+-(\\d+)-\\d{6}$")
 
     fun loadActs(context: Context): List<ActRecord> {
@@ -79,6 +80,7 @@ object ActStorage {
             .toMutableList()
             .apply { add(0, act) }
         saveActs(context, updatedActs)
+        rememberSequence(context, act.requestNumber)
     }
 
     fun deleteAct(context: Context, actId: Long): ActRecord? {
@@ -93,6 +95,23 @@ object ActStorage {
         val actsMax = acts.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
         val reqMax = requests.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
         return maxOf(actsMax, reqMax) + 1
+    }
+
+    fun nextSequence(context: Context, acts: List<ActRecord>, requests: List<RequestRecord> = emptyList()): Int {
+        val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val persistedMax = prefs.getInt(lastSequenceKey, 0)
+        val actsMax = acts.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
+        val reqMax = requests.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
+        return maxOf(persistedMax, actsMax, reqMax) + 1
+    }
+
+    fun rememberSequence(context: Context, requestNumber: String) {
+        val sequence = extractSequence(requestNumber) ?: return
+        val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val currentMax = prefs.getInt(lastSequenceKey, 0)
+        if (sequence > currentMax) {
+            prefs.edit().putInt(lastSequenceKey, sequence).apply()
+        }
     }
 
     private fun extractSequence(requestNumber: String): Int? =
@@ -338,6 +357,7 @@ object RequestStorage {
             .toMutableList()
             .apply { add(0, request) }
         saveRequests(context, updated)
+        ActStorage.rememberSequence(context, request.requestNumber)
     }
 
     fun deleteRequest(context: Context, requestId: Long) {

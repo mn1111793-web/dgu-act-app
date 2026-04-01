@@ -790,7 +790,7 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_document_type_placeholder),
                         onOptionSelected = { selectedTitle ->
                             documentType = documentTypeOptions.firstOrNull { it.title == selectedTitle }
-                                ?: DocumentType.DiagnosticAct
+                                ?: documentType
                         }
                     )
                     FormTextField(
@@ -800,109 +800,92 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_status_placeholder),
                         readOnly = true
                     )
-                    FormTextField(
-                        value = date,
-                        onValueChange = { date = it },
-                        label = stringResource(id = R.string.field_date),
-                        placeholder = stringResource(id = R.string.field_date_placeholder)
-                    )
-                    FormTextField(
-                        value = customer,
-                        onValueChange = { customer = it },
-                        label = stringResource(id = R.string.field_customer),
-                        placeholder = stringResource(id = R.string.field_customer_placeholder)
-                    )
-                    if (!isDiagnosticDocument) {
+                    if (isTransferAcceptanceDocument) {
+                        FormTextField(
+                            value = date,
+                            onValueChange = { date = it },
+                            label = stringResource(id = R.string.field_date),
+                            placeholder = stringResource(id = R.string.field_date_placeholder)
+                        )
+                        FormTextField(
+                            value = customer,
+                            onValueChange = { customer = it },
+                            label = stringResource(id = R.string.field_customer),
+                            placeholder = stringResource(id = R.string.field_customer_placeholder)
+                        )
+                        FormTextField(
+                            value = customerAddress,
+                            onValueChange = { customerAddress = it },
+                            label = stringResource(id = R.string.field_customer_address),
+                            placeholder = stringResource(id = R.string.field_customer_address_placeholder),
+                            minLines = 2
+                        )
                         FormTextField(
                             value = customerRepresentative,
                             onValueChange = { customerRepresentative = it },
                             label = stringResource(id = R.string.field_customer_representative),
                             placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
                         )
-                    }
-                    FormTextField(
-                        value = phone,
-                        onValueChange = { phone = it },
-                        label = if (isDiagnosticDocument) {
-                            stringResource(id = R.string.field_phone)
-                        } else {
-                            stringResource(id = R.string.field_customer_representative_phone)
-                        },
-                        placeholder = if (isDiagnosticDocument) {
-                            stringResource(id = R.string.field_phone_placeholder)
-                        } else {
-                            stringResource(id = R.string.field_customer_representative_phone_placeholder)
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-                    )
-                    FormTextField(
-                        value = customerAddress,
-                        onValueChange = { customerAddress = it },
-                        label = stringResource(id = R.string.field_customer_address),
-                        placeholder = stringResource(id = R.string.field_customer_address_placeholder),
-                        minLines = 2
-                    )
-                    FormTextField(
-                        value = equipmentName,
-                        onValueChange = {},
-                        label = stringResource(id = R.string.field_equipment_name),
-                        placeholder = stringResource(id = R.string.field_equipment_name_placeholder),
-                        readOnly = true
-                    )
-                    DropdownField(
-                        value = brandSelection,
-                        options = brandOptions,
-                        label = stringResource(id = R.string.field_brand),
-                        placeholder = stringResource(id = R.string.field_brand_placeholder),
-                        enabled = equipmentCode.isNotBlank(),
-                        onOptionSelected = { selectedBrand ->
-                            brandSelection = selectedBrand
-                            modelSelection = ""
-                            customBrand = if (selectedBrand == EquipmentCatalog.OTHER_OPTION) customBrand else ""
-                            customModel = ""
-                        }
-                    )
-                    if (brandSelection == EquipmentCatalog.OTHER_OPTION) {
                         FormTextField(
-                            value = customBrand,
-                            onValueChange = { customBrand = it },
-                            label = stringResource(id = R.string.field_custom_brand),
-                            placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = stringResource(id = R.string.field_customer_representative_phone),
+                            placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                         )
-                    }
-                    DropdownField(
-                        value = modelSelection,
-                        options = modelOptions,
-                        label = stringResource(id = R.string.field_model),
-                        placeholder = stringResource(id = R.string.field_model_placeholder),
-                        enabled = equipmentCode.isNotBlank(),
-                        onOptionSelected = { selectedModel ->
-                            modelSelection = selectedModel
-                            customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
-                        }
-                    )
-                    if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
                         FormTextField(
-                            value = customModel,
-                            onValueChange = { customModel = it },
-                            label = stringResource(id = R.string.field_custom_model),
-                            placeholder = stringResource(id = R.string.field_custom_model_placeholder)
+                            value = equipmentName,
+                            onValueChange = {},
+                            label = stringResource(id = R.string.field_equipment_name),
+                            placeholder = stringResource(id = R.string.field_equipment_name_placeholder),
+                            readOnly = true
                         )
-                    }
-                    FormTextField(
-                        value = serialNumber,
-                        onValueChange = { serialNumber = it },
-                        label = stringResource(id = R.string.field_serial_number),
-                        placeholder = stringResource(id = R.string.field_serial_number_placeholder)
-                    )
-                    FormTextField(
-                        value = operatingTime,
-                        onValueChange = { operatingTime = it },
-                        label = stringResource(id = R.string.field_operating_time),
-                        placeholder = stringResource(id = R.string.field_operating_time_placeholder),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-                    )
-                    if (isTransferAcceptanceDocument) {
+                        DropdownField(
+                            value = brandSelection,
+                            options = brandOptions,
+                            label = stringResource(id = R.string.field_brand),
+                            placeholder = stringResource(id = R.string.field_brand_placeholder),
+                            enabled = equipmentCode.isNotBlank(),
+                            onOptionSelected = { selectedBrand ->
+                                brandSelection = selectedBrand
+                                modelSelection = ""
+                                customBrand = if (selectedBrand == EquipmentCatalog.OTHER_OPTION) customBrand else ""
+                                customModel = ""
+                            }
+                        )
+                        if (brandSelection == EquipmentCatalog.OTHER_OPTION) {
+                            FormTextField(
+                                value = customBrand,
+                                onValueChange = { customBrand = it },
+                                label = stringResource(id = R.string.field_custom_brand),
+                                placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
+                            )
+                        }
+                        DropdownField(
+                            value = modelSelection,
+                            options = modelOptions,
+                            label = stringResource(id = R.string.field_model),
+                            placeholder = stringResource(id = R.string.field_model_placeholder),
+                            enabled = equipmentCode.isNotBlank(),
+                            onOptionSelected = { selectedModel ->
+                                modelSelection = selectedModel
+                                customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
+                            }
+                        )
+                        if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
+                            FormTextField(
+                                value = customModel,
+                                onValueChange = { customModel = it },
+                                label = stringResource(id = R.string.field_custom_model),
+                                placeholder = stringResource(id = R.string.field_custom_model_placeholder)
+                            )
+                        }
+                        FormTextField(
+                            value = serialNumber,
+                            onValueChange = { serialNumber = it },
+                            label = stringResource(id = R.string.field_serial_number),
+                            placeholder = stringResource(id = R.string.field_serial_number_placeholder)
+                        )
                         FormTextField(
                             value = transferCompleteness,
                             onValueChange = { transferCompleteness = it },
@@ -916,6 +899,109 @@ fun NewActScreen(
                             label = stringResource(id = R.string.field_external_condition),
                             placeholder = stringResource(id = R.string.field_external_condition_placeholder),
                             minLines = 2
+                        )
+                    } else {
+                        FormTextField(
+                            value = date,
+                            onValueChange = { date = it },
+                            label = stringResource(id = R.string.field_date),
+                            placeholder = stringResource(id = R.string.field_date_placeholder)
+                        )
+                        FormTextField(
+                            value = customer,
+                            onValueChange = { customer = it },
+                            label = stringResource(id = R.string.field_customer),
+                            placeholder = stringResource(id = R.string.field_customer_placeholder)
+                        )
+                        if (!isDiagnosticDocument) {
+                            FormTextField(
+                                value = customerRepresentative,
+                                onValueChange = { customerRepresentative = it },
+                                label = stringResource(id = R.string.field_customer_representative),
+                                placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
+                            )
+                        }
+                        FormTextField(
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = if (isDiagnosticDocument) {
+                                stringResource(id = R.string.field_phone)
+                            } else {
+                                stringResource(id = R.string.field_customer_representative_phone)
+                            },
+                            placeholder = if (isDiagnosticDocument) {
+                                stringResource(id = R.string.field_phone_placeholder)
+                            } else {
+                                stringResource(id = R.string.field_customer_representative_phone_placeholder)
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                        )
+                        FormTextField(
+                            value = customerAddress,
+                            onValueChange = { customerAddress = it },
+                            label = stringResource(id = R.string.field_customer_address),
+                            placeholder = stringResource(id = R.string.field_customer_address_placeholder),
+                            minLines = 2
+                        )
+                        FormTextField(
+                            value = equipmentName,
+                            onValueChange = {},
+                            label = stringResource(id = R.string.field_equipment_name),
+                            placeholder = stringResource(id = R.string.field_equipment_name_placeholder),
+                            readOnly = true
+                        )
+                        DropdownField(
+                            value = brandSelection,
+                            options = brandOptions,
+                            label = stringResource(id = R.string.field_brand),
+                            placeholder = stringResource(id = R.string.field_brand_placeholder),
+                            enabled = equipmentCode.isNotBlank(),
+                            onOptionSelected = { selectedBrand ->
+                                brandSelection = selectedBrand
+                                modelSelection = ""
+                                customBrand = if (selectedBrand == EquipmentCatalog.OTHER_OPTION) customBrand else ""
+                                customModel = ""
+                            }
+                        )
+                        if (brandSelection == EquipmentCatalog.OTHER_OPTION) {
+                            FormTextField(
+                                value = customBrand,
+                                onValueChange = { customBrand = it },
+                                label = stringResource(id = R.string.field_custom_brand),
+                                placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
+                            )
+                        }
+                        DropdownField(
+                            value = modelSelection,
+                            options = modelOptions,
+                            label = stringResource(id = R.string.field_model),
+                            placeholder = stringResource(id = R.string.field_model_placeholder),
+                            enabled = equipmentCode.isNotBlank(),
+                            onOptionSelected = { selectedModel ->
+                                modelSelection = selectedModel
+                                customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
+                            }
+                        )
+                        if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
+                            FormTextField(
+                                value = customModel,
+                                onValueChange = { customModel = it },
+                                label = stringResource(id = R.string.field_custom_model),
+                                placeholder = stringResource(id = R.string.field_custom_model_placeholder)
+                            )
+                        }
+                        FormTextField(
+                            value = serialNumber,
+                            onValueChange = { serialNumber = it },
+                            label = stringResource(id = R.string.field_serial_number),
+                            placeholder = stringResource(id = R.string.field_serial_number_placeholder)
+                        )
+                        FormTextField(
+                            value = operatingTime,
+                            onValueChange = { operatingTime = it },
+                            label = stringResource(id = R.string.field_operating_time),
+                            placeholder = stringResource(id = R.string.field_operating_time_placeholder),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                         )
                     }
                 }

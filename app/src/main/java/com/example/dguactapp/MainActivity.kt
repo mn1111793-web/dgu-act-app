@@ -736,6 +736,7 @@ fun NewActScreen(
                     )
                     FormTextField(
                         value = status.title,
+                        onValueChange = {},
                         label = stringResource(id = R.string.field_status),
                         placeholder = stringResource(id = R.string.field_status_placeholder),
                         readOnly = true

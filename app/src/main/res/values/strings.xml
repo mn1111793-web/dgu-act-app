@@ -15,8 +15,9 @@
     <string name="delete_button">Удалить</string>
     <string name="cancel_button">Отмена</string>
     <string name="delete_act_confirmation">Вы уверены, что хотите удалить акт?</string>
+    <string name="delete_request_confirmation">Вы уверены, что хотите удалить заявку и связанные документы?</string>
     <string name="form_intro_title">Заполните сведения по заявке</string>
-    <string name="form_intro_text">Код оборудования выбирается из справочника, номер заявки формируется автоматически, а бренд и модель можно выбрать из списка или ввести вручную.</string>
+    <string name="form_intro_text">Код оборудования выбирается из справочника, номер заявки подставляется автоматически, но доступен для ручного редактирования, а бренд и модель можно выбрать из списка или ввести вручную.</string>
     <string name="field_request_number">Номер заявки</string>
     <string name="field_request_number_placeholder">Номер появится после выбора кода оборудования</string>
     <string name="field_created_at">Дата создания</string>

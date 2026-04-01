@@ -162,6 +162,19 @@ private fun DguActApp() {
         }
     }
 
+    fun deleteRequest(request: RequestRecord) {
+        val requestActs = savedActs.filter { it.requestId == request.id }
+        requestActs.forEach { act ->
+            act.photos.forEach(PhotoStorage::deletePhoto)
+            ActStorage.deleteAct(context, act.id)
+        }
+        savedActs.removeAll { it.requestId == request.id }
+        RequestStorage.deleteRequest(context, request.id)
+        savedRequests.removeAll { it.id == request.id }
+        if (selectedRequestId == request.id) selectedRequestId = -1L
+        if (selectedActId != -1L && requestActs.any { it.id == selectedActId }) selectedActId = -1L
+    }
+
     when (AppScreen.valueOf(currentScreen)) {
         AppScreen.Start -> StartScreen(
             onCreateRequestClick = {
@@ -213,7 +226,8 @@ private fun DguActApp() {
             onRequestClick = { request ->
                 selectedRequestId = request.id
                 currentScreen = AppScreen.RequestDetails.name
-            }
+            },
+            onDeleteRequest = { request -> deleteRequest(request) }
         )
 
         AppScreen.RequestDetails -> if (selectedRequest != null) {
@@ -239,7 +253,8 @@ private fun DguActApp() {
                 onRequestClick = { request ->
                     selectedRequestId = request.id
                     currentScreen = AppScreen.RequestDetails.name
-                }
+                },
+                onDeleteRequest = { request -> deleteRequest(request) }
             )
         }
 
@@ -579,7 +594,7 @@ fun NewActScreen(
         }
     }
 
-    val requestNumber = remember(
+    val generatedRequestNumber = remember(
         existingAct?.requestNumber,
         existingRequest?.requestNumber,
         equipmentCode,
@@ -590,6 +605,15 @@ fun NewActScreen(
             ?.ifBlank { null }
             ?: existingRequest?.requestNumber?.ifBlank { null }
             ?: if (equipmentCode.isBlank()) "" else "$equipmentCode-$nextSequence-$requestDatePart"
+    }
+    var requestNumber by rememberSaveable(existingAct?.id) { mutableStateOf(generatedRequestNumber) }
+    var requestNumberEditedManually by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct != null || existingRequest?.requestNumber?.isNotBlank() == true)
+    }
+    LaunchedEffect(generatedRequestNumber, equipmentCode) {
+        if (!requestNumberEditedManually || requestNumber.isBlank()) {
+            requestNumber = generatedRequestNumber
+        }
     }
 
     val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
@@ -726,10 +750,12 @@ fun NewActScreen(
                     )
                     FormTextField(
                         value = requestNumber,
-                        onValueChange = {},
+                        onValueChange = {
+                            requestNumber = it
+                            requestNumberEditedManually = true
+                        },
                         label = stringResource(id = R.string.field_request_number),
-                        placeholder = stringResource(id = R.string.field_request_number_placeholder),
-                        readOnly = true
+                        placeholder = stringResource(id = R.string.field_request_number_placeholder)
                     )
                     FormTextField(
                         value = createdAt,
@@ -1226,8 +1252,10 @@ fun RequestsListScreen(
     requests: List<RequestRecord>,
     acts: List<ActRecord>,
     onBackClick: () -> Unit = {},
-    onRequestClick: (RequestRecord) -> Unit = {}
+    onRequestClick: (RequestRecord) -> Unit = {},
+    onDeleteRequest: (RequestRecord) -> Unit = {}
 ) {
+    var requestPendingDelete by remember { mutableStateOf<RequestRecord?>(null) }
     BackHandler(onBack = onBackClick)
 
     Scaffold(
@@ -1290,11 +1318,20 @@ fun RequestsListScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
                         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = request.requestNumber,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = request.requestNumber,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                TextButton(onClick = { requestPendingDelete = request }) {
+                                    Text(text = stringResource(id = R.string.delete_button))
+                                }
+                            }
                             InfoLine(stringResource(id = R.string.field_created_at), request.createdAt)
                             InfoLine(stringResource(id = R.string.field_customer), request.customer)
                             InfoLine(stringResource(id = R.string.field_equipment_name), request.equipmentName)
@@ -1304,6 +1341,29 @@ fun RequestsListScreen(
                 }
             }
         }
+    }
+
+    if (requestPendingDelete != null) {
+        AlertDialog(
+            onDismissRequest = { requestPendingDelete = null },
+            title = { Text(text = stringResource(id = R.string.delete_button)) },
+            text = { Text(text = stringResource(id = R.string.delete_request_confirmation)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        requestPendingDelete?.let(onDeleteRequest)
+                        requestPendingDelete = null
+                    }
+                ) {
+                    Text(text = stringResource(id = R.string.delete_button))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { requestPendingDelete = null }) {
+                    Text(text = stringResource(id = R.string.cancel_button))
+                }
+            }
+        )
     }
 }
 

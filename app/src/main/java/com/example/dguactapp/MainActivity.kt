@@ -423,6 +423,21 @@ fun NewActScreen(
     var operatingTime by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.operatingTime.orEmpty())
     }
+    var customerRepresentative by rememberSaveable(existingAct?.id) {
+        mutableStateOf(
+            if (existingAct?.documentType == DocumentType.DiagnosticAct) {
+                ""
+            } else {
+                existingAct?.malfunctionDescription.orEmpty()
+            }
+        )
+    }
+    var transferCompleteness by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.completeness.orEmpty())
+    }
+    var transferExternalCondition by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.externalCondition.orEmpty())
+    }
     var diagnosisType by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.diagnosisType ?: DiagnosisType.Primary)
     }
@@ -618,6 +633,9 @@ fun NewActScreen(
 
     val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
     val resolvedModel = if (modelSelection == EquipmentCatalog.OTHER_OPTION) customModel else modelSelection
+    val isDiagnosticDocument = documentType == DocumentType.DiagnosticAct
+    val isTransferAcceptanceDocument = documentType == DocumentType.TransferAcceptanceAct
+    val isAcceptanceDocument = documentType == DocumentType.AcceptanceAct
     val status = remember(
         date,
         customer,
@@ -794,11 +812,27 @@ fun NewActScreen(
                         label = stringResource(id = R.string.field_customer),
                         placeholder = stringResource(id = R.string.field_customer_placeholder)
                     )
+                    if (!isDiagnosticDocument) {
+                        FormTextField(
+                            value = customerRepresentative,
+                            onValueChange = { customerRepresentative = it },
+                            label = stringResource(id = R.string.field_customer_representative),
+                            placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
+                        )
+                    }
                     FormTextField(
                         value = phone,
                         onValueChange = { phone = it },
-                        label = stringResource(id = R.string.field_phone),
-                        placeholder = stringResource(id = R.string.field_phone_placeholder),
+                        label = if (isDiagnosticDocument) {
+                            stringResource(id = R.string.field_phone)
+                        } else {
+                            stringResource(id = R.string.field_customer_representative_phone)
+                        },
+                        placeholder = if (isDiagnosticDocument) {
+                            stringResource(id = R.string.field_phone_placeholder)
+                        } else {
+                            stringResource(id = R.string.field_customer_representative_phone_placeholder)
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                     )
                     FormTextField(
@@ -868,6 +902,22 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_operating_time_placeholder),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                     )
+                    if (isTransferAcceptanceDocument) {
+                        FormTextField(
+                            value = transferCompleteness,
+                            onValueChange = { transferCompleteness = it },
+                            label = stringResource(id = R.string.field_completeness),
+                            placeholder = stringResource(id = R.string.field_completeness_placeholder),
+                            minLines = 2
+                        )
+                        FormTextField(
+                            value = transferExternalCondition,
+                            onValueChange = { transferExternalCondition = it },
+                            label = stringResource(id = R.string.field_external_condition),
+                            placeholder = stringResource(id = R.string.field_external_condition_placeholder),
+                            minLines = 2
+                        )
+                    }
                 }
             }
 
@@ -925,45 +975,47 @@ fun NewActScreen(
                 }
             }
 
-            item {
-                DetailCard(title = stringResource(id = R.string.diagnosis_type_title)) {
-                    Text(
-                        text = stringResource(id = R.string.diagnosis_type_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    DiagnosisTypeSelector(
-                        selectedType = diagnosisType,
-                        onTypeSelected = { selectedType ->
-                            diagnosisType = selectedType
+            if (isDiagnosticDocument) {
+                item {
+                    DetailCard(title = stringResource(id = R.string.diagnosis_type_title)) {
+                        Text(
+                            text = stringResource(id = R.string.diagnosis_type_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        DiagnosisTypeSelector(
+                            selectedType = diagnosisType,
+                            onTypeSelected = { selectedType ->
+                                diagnosisType = selectedType
+                            }
+                        )
+                    }
+                }
+
+                items(DiagnosticChecklistCatalog.sectionsFor(diagnosisType), key = { it.title }) { section ->
+                    ChecklistSectionEditor(
+                        section = section,
+                        items = checklistItems,
+                        onItemChange = { updatedItem ->
+                            val index = checklistItems.indexOfFirst { it.key == updatedItem.key }
+                            if (index >= 0) {
+                                checklistItems[index] = updatedItem
+                            }
                         }
                     )
                 }
-            }
 
-            items(DiagnosticChecklistCatalog.sectionsFor(diagnosisType), key = { it.title }) { section ->
-                ChecklistSectionEditor(
-                    section = section,
-                    items = checklistItems,
-                    onItemChange = { updatedItem ->
-                        val index = checklistItems.indexOfFirst { it.key == updatedItem.key }
-                        if (index >= 0) {
-                            checklistItems[index] = updatedItem
-                        }
+                item {
+                    DetailCard(title = stringResource(id = R.string.preliminary_conclusion_title)) {
+                        FormTextField(
+                            value = preliminaryConclusion,
+                            onValueChange = { preliminaryConclusion = it },
+                            label = stringResource(id = R.string.preliminary_conclusion_title),
+                            placeholder = stringResource(id = R.string.preliminary_conclusion_placeholder),
+                            minLines = 3
+                        )
                     }
-                )
-            }
-
-            item {
-                DetailCard(title = stringResource(id = R.string.preliminary_conclusion_title)) {
-                    FormTextField(
-                        value = preliminaryConclusion,
-                        onValueChange = { preliminaryConclusion = it },
-                        label = stringResource(id = R.string.preliminary_conclusion_title),
-                        placeholder = stringResource(id = R.string.preliminary_conclusion_placeholder),
-                        minLines = 3
-                    )
                 }
             }
 
@@ -986,7 +1038,7 @@ fun NewActScreen(
                 }
             }
 
-            if (diagnosisType == DiagnosisType.Advanced) {
+            if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) {
                 item {
                     DetailCard(title = stringResource(id = R.string.advanced_result_title)) {
                         FormTextField(
@@ -1080,11 +1132,15 @@ fun NewActScreen(
                             checklistItems.findCommentByKey("visual_casing_condition"),
                             checklistItems.findCommentByKey("visual_damage_traces")
                         ).filter { it.isNotBlank() }.joinToString("; ")
-                        val actChecklistItems = DiagnosticChecklistCatalog.stateFor(
-                            type = diagnosisType,
-                            savedItems = checklistItems.toList(),
-                            legacyAct = existingAct
-                        )
+                        val actChecklistItems = if (isDiagnosticDocument) {
+                            DiagnosticChecklistCatalog.stateFor(
+                                type = diagnosisType,
+                                savedItems = checklistItems.toList(),
+                                legacyAct = existingAct
+                            )
+                        } else {
+                            emptyList()
+                        }
                         val actStatus = resolveActStatus(
                             date = date,
                             customer = customer,
@@ -1128,14 +1184,18 @@ fun NewActScreen(
                             model = resolvedModel,
                             serialNumber = serialNumber,
                             operatingTime = operatingTime,
-                            completeness = completenessSummary,
-                            externalCondition = externalConditionSummary,
-                            malfunctionDescription = preliminaryConclusion,
-                            diagnosisType = diagnosisType,
+                            completeness = if (isDiagnosticDocument) completenessSummary else transferCompleteness,
+                            externalCondition = if (isDiagnosticDocument) externalConditionSummary else transferExternalCondition,
+                            malfunctionDescription = if (isDiagnosticDocument) preliminaryConclusion else customerRepresentative,
+                            diagnosisType = if (isDiagnosticDocument) diagnosisType else DiagnosisType.Primary,
                             checklistItems = actChecklistItems,
-                            preliminaryConclusion = preliminaryConclusion,
-                            rootCause = if (diagnosisType == DiagnosisType.Advanced) rootCause else "",
-                            requiredWorks = if (diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
+                            preliminaryConclusion = if (isDiagnosticDocument || isAcceptanceDocument) {
+                                preliminaryConclusion
+                            } else {
+                                ""
+                            },
+                            rootCause = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) rootCause else "",
+                            requiredWorks = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
                             pdfPath = pdfPath,
                             comment = comment,
                             photos = photos.toList(),

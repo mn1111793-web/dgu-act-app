@@ -3,6 +3,7 @@ package com.example.dguactapp
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.OpenableColumns
 import android.os.Bundle
 import android.net.Uri
 import android.widget.Toast
@@ -186,6 +187,11 @@ private fun DguActApp() {
                     customer = "",
                     phone = "",
                     customerAddress = "",
+                    organizationName = "",
+                    organizationAddress = "",
+                    customerRepresentative = "",
+                    customerRepresentativePhone = "",
+                    enterpriseCardUri = "",
                     equipmentCode = "",
                     equipmentName = "",
                     brand = "",
@@ -409,6 +415,22 @@ fun NewActScreen(
     var customerAddress by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.customerAddress ?: existingRequest?.customerAddress.orEmpty())
     }
+    var organizationName by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingRequest?.organizationName.orEmpty())
+    }
+    var organizationAddress by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingRequest?.organizationAddress.orEmpty())
+    }
+    var manualCustomerRepresentative by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingRequest?.customerRepresentative.orEmpty())
+    }
+    var manualCustomerRepresentativePhone by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingRequest?.customerRepresentativePhone.orEmpty())
+    }
+    var enterpriseCardUri by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingRequest?.enterpriseCardUri.orEmpty())
+    }
+    var enterpriseCardFileName by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var brandSelection by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
     }
@@ -540,6 +562,20 @@ fun NewActScreen(
             ).show()
         }
     }
+    val enterpriseCardLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            enterpriseCardUri = uri.toString()
+            enterpriseCardFileName = resolveFileName(context, uri)
+        }
+    }
 
     DisposableEffect(existingAct?.id) {
         onDispose {
@@ -547,6 +583,11 @@ fun NewActScreen(
                 photos.filterNot { it.filePath in initialPhotoPaths }.forEach(PhotoStorage::deletePhoto)
             }
             pendingCameraPhoto?.let(PhotoStorage::deletePhoto)
+        }
+    }
+    LaunchedEffect(enterpriseCardUri) {
+        if (enterpriseCardUri.isNotBlank() && enterpriseCardFileName.isBlank()) {
+            enterpriseCardFileName = resolveFileName(context, Uri.parse(enterpriseCardUri))
         }
     }
 
@@ -799,6 +840,52 @@ fun NewActScreen(
                         label = stringResource(id = R.string.field_status),
                         placeholder = stringResource(id = R.string.field_status_placeholder),
                         readOnly = true
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            enterpriseCardLauncher.launch(
+                                arrayOf("application/pdf", "image/jpeg", "image/png")
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = stringResource(id = R.string.upload_enterprise_card))
+                    }
+                    if (enterpriseCardUri.isNotBlank()) {
+                        Text(
+                            text = stringResource(
+                                id = R.string.enterprise_card_selected,
+                                if (enterpriseCardFileName.isBlank()) enterpriseCardUri else enterpriseCardFileName
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    FormTextField(
+                        value = organizationName,
+                        onValueChange = { organizationName = it },
+                        label = stringResource(id = R.string.field_organization_name),
+                        placeholder = stringResource(id = R.string.field_organization_name_placeholder)
+                    )
+                    FormTextField(
+                        value = organizationAddress,
+                        onValueChange = { organizationAddress = it },
+                        label = stringResource(id = R.string.field_organization_address),
+                        placeholder = stringResource(id = R.string.field_organization_address_placeholder),
+                        minLines = 2
+                    )
+                    FormTextField(
+                        value = manualCustomerRepresentative,
+                        onValueChange = { manualCustomerRepresentative = it },
+                        label = stringResource(id = R.string.field_customer_representative),
+                        placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
+                    )
+                    FormTextField(
+                        value = manualCustomerRepresentativePhone,
+                        onValueChange = { manualCustomerRepresentativePhone = it },
+                        label = stringResource(id = R.string.field_customer_representative_phone),
+                        placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                     )
                     if (isTransferAcceptanceDocument) {
                         FormTextField(
@@ -1247,6 +1334,11 @@ fun NewActScreen(
                             customer = customer.ifBlank { context.getString(R.string.default_customer_value) },
                             phone = phone,
                             customerAddress = customerAddress,
+                            organizationName = organizationName,
+                            organizationAddress = organizationAddress,
+                            customerRepresentative = manualCustomerRepresentative,
+                            customerRepresentativePhone = manualCustomerRepresentativePhone,
+                            enterpriseCardUri = enterpriseCardUri,
                             equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
                             brand = resolvedBrand,
@@ -2463,6 +2555,17 @@ private fun currentDateDisplay(): String =
 private fun currentDateForRequestNumber(): String =
     SimpleDateFormat("ddMMyy", Locale.getDefault()).format(Date())
 
+private fun resolveFileName(context: android.content.Context, uri: Uri): String {
+    val fileName = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
+            }
+    }.getOrNull()
+    return fileName.orEmpty()
+}
+
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun StartScreenPreview() {
@@ -2523,6 +2626,11 @@ private fun RequestsListScreenPreview() {
                     customer = "ООО «Энерго Сервис»",
                     phone = "+7 900 000-00-00",
                     customerAddress = "г. Москва, ул. Центральная, д. 10",
+                    organizationName = "ООО «Энерго Сервис»",
+                    organizationAddress = "г. Москва, ул. Центральная, д. 10",
+                    customerRepresentative = "Иванов И.И.",
+                    customerRepresentativePhone = "+7 900 000-00-00",
+                    enterpriseCardUri = "",
                     equipmentCode = "DGU",
                     equipmentName = "дизельный генератор",
                     brand = "FG Wilson",

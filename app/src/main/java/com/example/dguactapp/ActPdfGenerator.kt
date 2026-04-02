@@ -212,7 +212,10 @@ object ActPdfGenerator {
             drawSection("Исполнитель")
             drawKeyValue("Организация", "Исполнитель")
             drawSection("Заказчик")
-            drawKeyValue("Телефон", act.phone)
+            drawKeyValue(
+                if (documentType == DocumentType.DiagnosticAct) "Телефон организации" else "Телефон",
+                act.phone
+            )
             if (documentType != DocumentType.DiagnosticAct) {
                 drawKeyValue("Заказчик", act.customer)
                 drawKeyValue("Адрес заказчика", act.customerAddress)
@@ -355,6 +358,10 @@ object ActPdfGenerator {
                 drawSection("4. Подтверждение передачи")
                 drawParagraph("4.1. Оборудование передано Заказчику в месте передачи имущества, указанном в настоящем Акте.")
                 drawParagraph("4.2. Заказчик подтверждает факт возврата оборудования из ремонта и претензий по передаче не имеет.")
+                drawKeyValue("Оборудование передается в", act.equipmentTransferState)
+                drawParagraph("Заказчик претензий не имеет к состоянию и внешнему виду оборудования.")
+                drawParagraph("Гарантия на произведенные работы составляет 14 дней, либо до момента погрузки оборудования.")
+                drawParagraph("Гарантия на запасные части — согласно документации производителя.")
             }
         }
 

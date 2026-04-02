@@ -204,7 +204,7 @@ object ActPdfGenerator {
             y += 6f
         }
 
-        fun drawBaseInfoSections() {
+        fun drawBaseInfoSections(documentType: DocumentType) {
             drawSection("Дата и место")
             drawKeyValue("Номер заявки", act.requestNumber)
             drawKeyValue("Дата", act.date)
@@ -212,9 +212,11 @@ object ActPdfGenerator {
             drawSection("Исполнитель")
             drawKeyValue("Организация", "Исполнитель")
             drawSection("Заказчик")
-            drawKeyValue("Заказчик", act.customer)
             drawKeyValue("Телефон", act.phone)
-            drawKeyValue("Адрес заказчика", act.customerAddress)
+            if (documentType != DocumentType.DiagnosticAct) {
+                drawKeyValue("Заказчик", act.customer)
+                drawKeyValue("Адрес заказчика", act.customerAddress)
+            }
             y += 2f
             drawSection("2. Сведения об оборудовании")
             drawKeyValue("Код оборудования", act.equipmentCode)
@@ -225,16 +227,63 @@ object ActPdfGenerator {
             drawKeyValue("Наработка", act.operatingTime)
         }
 
+        fun drawAcceptanceEquipmentTable() {
+            val tableLeft = margin
+            val tableRight = pageWidth - margin
+            val headerHeight = 22f
+            val rowHeight = 34f
+            val tableTop = y + 4f
+            val width = tableRight - tableLeft
+            val col1 = tableLeft + width * 0.1f
+            val col2 = tableLeft + width * 0.72f
+            val tableBottom = tableTop + headerHeight + rowHeight
+
+            ensureSpace(headerHeight + rowHeight + 18f)
+            canvas.drawRect(tableLeft, tableTop, tableRight, tableBottom, linePaint)
+            canvas.drawLine(tableLeft, tableTop + headerHeight, tableRight, tableTop + headerHeight, linePaint)
+            canvas.drawLine(col1, tableTop, col1, tableBottom, linePaint)
+            canvas.drawLine(col2, tableTop, col2, tableBottom, linePaint)
+
+            canvas.drawText("№", tableLeft + 6f, tableTop + 15f, smallPaint)
+            canvas.drawText("Наименование оборудования", col1 + 6f, tableTop + 15f, smallPaint)
+            canvas.drawText("Серийный номер", col2 + 6f, tableTop + 15f, smallPaint)
+
+            val equipmentDescription = buildString {
+                append(act.equipmentName.ifBlank { "Не заполнено" })
+                val details = listOf(act.brand, act.model).filter { it.isNotBlank() }.joinToString(" / ")
+                if (details.isNotBlank()) {
+                    append(" (")
+                    append(details)
+                    append(")")
+                }
+            }
+            canvas.drawText("1", tableLeft + 6f, tableTop + headerHeight + 20f, bodyPaint)
+            canvas.drawText(
+                equipmentDescription.take(55),
+                col1 + 6f,
+                tableTop + headerHeight + 20f,
+                bodyPaint
+            )
+            canvas.drawText(
+                act.serialNumber.ifBlank { "Не заполнено" }.take(22),
+                col2 + 6f,
+                tableTop + headerHeight + 20f,
+                bodyPaint
+            )
+
+            y = tableBottom + 10f
+        }
+
         drawSharedHeader(
             title = when (act.documentType) {
                 DocumentType.DiagnosticAct -> "АКТ ДИАГНОСТИКИ ОБОРУДОВАНИЯ"
                 DocumentType.TransferAcceptanceAct -> "АКТ ПРИЁМА-ПЕРЕДАЧИ ОБОРУДОВАНИЯ НА ДИАГНОСТИКУ"
-                DocumentType.AcceptanceAct -> "АКТ СДАЧИ-ПРИЁМА РАБОТ"
+                DocumentType.AcceptanceAct -> "АКТ СДАЧИ-ПРИЁМА ОБОРУДОВАНИЯ ИЗ РЕМОНТА"
             },
             subtitle = act.documentType.title
         )
 
-        drawBaseInfoSections()
+        drawBaseInfoSections(act.documentType)
 
         when (act.documentType) {
             DocumentType.DiagnosticAct -> {
@@ -294,15 +343,18 @@ object ActPdfGenerator {
 
             DocumentType.AcceptanceAct -> {
                 drawSection("1. Предмет акта")
-                drawParagraph("1.1. Настоящий Акт подтверждает факт завершения диагностики оборудования и передачи результатов Заказчику.")
-                drawSection("3. Результат работ")
-                drawKeyValue("Выполненные работы", act.requiredWorks, blankLines = 3)
-                drawKeyValue("Заключение", act.preliminaryConclusion, blankLines = 3)
-                drawSection("4. Условия приёма")
-                drawParagraph("4.1. Заказчик принял результат работ и сведения по оборудованию без замечаний, если иное не указано ниже.")
-                drawKeyValue("Замечания заказчика", act.comment, blankLines = 2)
-                drawSection("5. Электронное подписание")
-                legalSection.drop(5).forEach { drawParagraph(it) }
+                drawParagraph("1.1. Исполнитель передаёт, а Заказчик принимает оборудование после выполненного ремонта.")
+                drawSection("2. Данные сторон")
+                drawKeyValue("Исполнитель", "Исполнитель")
+                drawKeyValue("Заказчик", act.customer)
+                drawKeyValue("Представитель заказчика", act.malfunctionDescription)
+                drawKeyValue("Телефон заказчика", act.phone)
+                drawKeyValue("Место передачи имущества", act.customerAddress)
+                drawSection("3. Оборудование")
+                drawAcceptanceEquipmentTable()
+                drawSection("4. Подтверждение передачи")
+                drawParagraph("4.1. Оборудование передано Заказчику в месте передачи имущества, указанном в настоящем Акте.")
+                drawParagraph("4.2. Заказчик подтверждает факт возврата оборудования из ремонта и претензий по передаче не имеет.")
             }
         }
 

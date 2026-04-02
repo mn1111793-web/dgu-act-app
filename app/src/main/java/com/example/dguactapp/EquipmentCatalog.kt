@@ -80,6 +80,7 @@ object EquipmentCatalog {
             name = "АВР / шкаф автоматического ввода резерва",
             brands = listOf(
                 EquipmentBrand("TCC", listOf("ATS 63A", "ATS 160A")),
+                EquipmentBrand("TSS", listOf("ATS 63A", "ATS 160A")),
                 EquipmentBrand("EKF", listOf("AVR-63", "AVR-100"))
             )
         ),

@@ -425,8 +425,10 @@ fun NewActScreen(
             }
             .maxByOrNull { it.createdAt }
     }
-    val createdAt = rememberSaveable(existingAct?.id) {
-        existingAct?.createdAt?.ifBlank { today } ?: existingRequest?.createdAt?.ifBlank { today } ?: today
+    var createdAt by rememberSaveable(existingAct?.id) {
+        mutableStateOf(
+            existingAct?.createdAt?.ifBlank { today } ?: existingRequest?.createdAt?.ifBlank { today } ?: today
+        )
     }
     var equipmentName by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.equipmentName ?: existingRequest?.equipmentName.orEmpty())
@@ -580,7 +582,7 @@ fun NewActScreen(
         }
     }
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia()
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
     ) { uris ->
         isImportingPhotos = false
         val imported = uris.mapNotNull { uri -> PhotoStorage.importPhotoFromUri(context, uri) }
@@ -905,10 +907,10 @@ fun NewActScreen(
                     )
                     FormTextField(
                         value = createdAt,
-                        onValueChange = {},
+                        onValueChange = { createdAt = it },
                         label = stringResource(id = R.string.field_created_at),
                         placeholder = stringResource(id = R.string.field_created_at_placeholder),
-                        readOnly = true
+                        readOnly = !isTransferAcceptanceDocument
                     )
                     val documentTypeOptions = DocumentType.values().toList()
                     DropdownField(
@@ -958,22 +960,10 @@ fun NewActScreen(
                     }
                     if (isTransferAcceptanceDocument) {
                         FormTextField(
-                            value = date,
-                            onValueChange = { date = it },
-                            label = stringResource(id = R.string.field_date),
-                            placeholder = stringResource(id = R.string.field_date_placeholder)
-                        )
-                        FormTextField(
-                            value = customer,
-                            onValueChange = { customer = it },
-                            label = stringResource(id = R.string.field_customer),
-                            placeholder = stringResource(id = R.string.field_customer_placeholder)
-                        )
-                        FormTextField(
                             value = customerAddress,
                             onValueChange = { customerAddress = it },
-                            label = stringResource(id = R.string.field_customer_address),
-                            placeholder = stringResource(id = R.string.field_customer_address_placeholder),
+                            label = stringResource(id = R.string.field_organization_address),
+                            placeholder = stringResource(id = R.string.field_organization_address_placeholder),
                             minLines = 2
                         )
                         FormTextField(
@@ -1017,25 +1007,6 @@ fun NewActScreen(
                                 placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
                             )
                         }
-                        DropdownField(
-                            value = modelSelection,
-                            options = modelOptions,
-                            label = stringResource(id = R.string.field_model),
-                            placeholder = stringResource(id = R.string.field_model_placeholder),
-                            enabled = equipmentCode.isNotBlank(),
-                            onOptionSelected = { selectedModel ->
-                                modelSelection = selectedModel
-                                customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
-                            }
-                        )
-                        if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
-                            FormTextField(
-                                value = customModel,
-                                onValueChange = { customModel = it },
-                                label = stringResource(id = R.string.field_custom_model),
-                                placeholder = stringResource(id = R.string.field_custom_model_placeholder)
-                            )
-                        }
                         FormTextField(
                             value = serialNumber,
                             onValueChange = { serialNumber = it },
@@ -1043,18 +1014,30 @@ fun NewActScreen(
                             placeholder = stringResource(id = R.string.field_serial_number_placeholder)
                         )
                         FormTextField(
+                            value = operatingTime,
+                            onValueChange = { operatingTime = it },
+                            label = stringResource(id = R.string.field_operating_time),
+                            placeholder = stringResource(id = R.string.field_operating_time_placeholder),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                        )
+                        FormTextField(
                             value = transferCompleteness,
                             onValueChange = { transferCompleteness = it },
                             label = stringResource(id = R.string.field_completeness),
-                            placeholder = stringResource(id = R.string.field_completeness_placeholder),
-                            minLines = 2
+                            placeholder = stringResource(id = R.string.field_completeness_placeholder)
                         )
-                        FormTextField(
+                        DropdownField(
                             value = transferExternalCondition,
-                            onValueChange = { transferExternalCondition = it },
+                            options = listOf(
+                                stringResource(id = R.string.external_condition_normal),
+                                stringResource(id = R.string.external_condition_minor_dents),
+                                stringResource(id = R.string.external_condition_comments)
+                            ),
                             label = stringResource(id = R.string.field_external_condition),
                             placeholder = stringResource(id = R.string.field_external_condition_placeholder),
-                            minLines = 2
+                            onOptionSelected = { selectedCondition ->
+                                transferExternalCondition = selectedCondition
+                            }
                         )
                     } else {
                         FormTextField(

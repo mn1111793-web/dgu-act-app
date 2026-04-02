@@ -77,6 +77,9 @@
     <string name="field_completeness_placeholder">Опишите комплект поставки и наличие узлов</string>
     <string name="field_external_condition">Внешнее состояние</string>
     <string name="field_external_condition_placeholder">Опишите внешний осмотр и замечания</string>
+    <string name="external_condition_normal">в норме</string>
+    <string name="external_condition_minor_dents">незначительные замятия, потертости кожуха</string>
+    <string name="external_condition_comments">комментарии</string>
     <string name="field_malfunction_description">Описание неисправности</string>
     <string name="field_malfunction_description_placeholder">Подробно опишите выявленную неисправность</string>
     <string name="save_button">Сохранить</string>

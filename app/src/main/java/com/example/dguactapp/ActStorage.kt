@@ -49,6 +49,7 @@ data class ActRecord(
     val preliminaryConclusion: String = "",
     val rootCause: String = "",
     val requiredWorks: String = "",
+    val equipmentTransferState: String = "",
     val pdfPath: String = "",
     val comment: String = "",
     val photos: List<ActPhoto> = emptyList(),
@@ -158,6 +159,7 @@ object ActStorage {
         put("preliminaryConclusion", preliminaryConclusion)
         put("rootCause", rootCause)
         put("requiredWorks", requiredWorks)
+        put("equipmentTransferState", equipmentTransferState)
         put("pdfPath", pdfPath)
         put("comment", comment)
         put(
@@ -271,6 +273,7 @@ object ActStorage {
             },
             rootCause = optString("rootCause"),
             requiredWorks = optString("requiredWorks"),
+            equipmentTransferState = optString("equipmentTransferState"),
             pdfPath = optString("pdfPath"),
             comment = optString("comment"),
             photos = photos,

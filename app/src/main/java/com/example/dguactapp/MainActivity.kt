@@ -109,6 +109,17 @@ private enum class AppScreen {
     ActDetails
 }
 
+private enum class EquipmentTransferState(val value: String) {
+    Working("рабочем состоянии"),
+    NotWorking("нерабочем состоянии"),
+    PartiallyWorking("частично рабочем состоянии");
+
+    companion object {
+        fun fromValue(value: String): EquipmentTransferState =
+            values().firstOrNull { it.value == value } ?: Working
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -401,6 +412,19 @@ fun NewActScreen(
     var documentType by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.documentType ?: initialDocumentType)
     }
+    val linkedTransferAct = remember(existingActs, existingRequest?.id, existingAct?.requestNumber, existingRequest?.requestNumber) {
+        val targetRequestNumber = existingAct?.requestNumber?.ifBlank { null }
+            ?: existingRequest?.requestNumber?.ifBlank { null }
+            ?: ""
+        existingActs
+            .asSequence()
+            .filter { it.documentType == DocumentType.TransferAcceptanceAct }
+            .filter {
+                (existingRequest != null && it.requestId == existingRequest.id) ||
+                    (targetRequestNumber.isNotBlank() && it.requestNumber == targetRequestNumber)
+            }
+            .maxByOrNull { it.createdAt }
+    }
     val createdAt = rememberSaveable(existingAct?.id) {
         existingAct?.createdAt?.ifBlank { today } ?: existingRequest?.createdAt?.ifBlank { today } ?: today
     }
@@ -684,12 +708,37 @@ fun NewActScreen(
             requestNumber = generatedRequestNumber
         }
     }
+    var equipmentTransferState by rememberSaveable(existingAct?.id) {
+        mutableStateOf(
+            EquipmentTransferState.fromValue(existingAct?.equipmentTransferState.orEmpty())
+        )
+    }
 
     val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
     val resolvedModel = if (modelSelection == EquipmentCatalog.OTHER_OPTION) customModel else modelSelection
     val isDiagnosticDocument = documentType == DocumentType.DiagnosticAct
     val isTransferAcceptanceDocument = documentType == DocumentType.TransferAcceptanceAct
     val isAcceptanceDocument = documentType == DocumentType.AcceptanceAct
+    LaunchedEffect(isAcceptanceDocument, linkedTransferAct?.id, existingRequest?.id) {
+        if (!isAcceptanceDocument) return@LaunchedEffect
+        val source = linkedTransferAct
+        requestNumber = source?.requestNumber?.ifBlank { null }
+            ?: existingRequest?.requestNumber.orEmpty()
+        customer = source?.customer?.ifBlank { null } ?: existingRequest?.customer.orEmpty()
+        phone = source?.phone?.ifBlank { null } ?: existingRequest?.phone.orEmpty()
+        customerAddress = source?.customerAddress?.ifBlank { null } ?: existingRequest?.customerAddress.orEmpty()
+        customerRepresentative = source?.malfunctionDescription?.ifBlank { null }
+            ?: existingRequest?.customerRepresentative.orEmpty()
+        equipmentCode = source?.equipmentCode?.ifBlank { null } ?: existingRequest?.equipmentCode.orEmpty()
+        equipmentName = source?.equipmentName?.ifBlank { null } ?: existingRequest?.equipmentName.orEmpty()
+        serialNumber = source?.serialNumber?.ifBlank { null } ?: existingRequest?.serialNumber.orEmpty()
+        if (source?.brand?.isNotBlank() == true) {
+            brandSelection = source.brand
+        }
+        if (source?.model?.isNotBlank() == true) {
+            modelSelection = source.model
+        }
+    }
     val status = remember(
         date,
         customer,
@@ -802,46 +851,48 @@ fun NewActScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedButton(
-                        onClick = {
-                            enterpriseCardLauncher.launch(
-                                arrayOf(
-                                    "application/pdf",
-                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    if (!isAcceptanceDocument) {
+                        OutlinedButton(
+                            onClick = {
+                                enterpriseCardLauncher.launch(
+                                    arrayOf(
+                                        "application/pdf",
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                    )
                                 )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(text = stringResource(id = R.string.upload_enterprise_card))
+                        }
+                        if (enterpriseCardUri.isNotBlank()) {
+                            Text(
+                                text = stringResource(
+                                    id = R.string.enterprise_card_selected,
+                                    if (enterpriseCardFileName.isBlank()) enterpriseCardUri else enterpriseCardFileName
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = stringResource(id = R.string.upload_enterprise_card))
-                    }
-                    if (enterpriseCardUri.isNotBlank()) {
-                        Text(
-                            text = stringResource(
-                                id = R.string.enterprise_card_selected,
-                                if (enterpriseCardFileName.isBlank()) enterpriseCardUri else enterpriseCardFileName
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        DropdownField(
+                            value = selectedEquipment?.displayName.orEmpty(),
+                            options = EquipmentCatalog.equipmentTypes.map { it.displayName },
+                            label = stringResource(id = R.string.field_equipment_code),
+                            placeholder = stringResource(id = R.string.field_equipment_code_placeholder),
+                            onOptionSelected = { selectedDisplayName ->
+                                val equipment = EquipmentCatalog.equipmentTypes.firstOrNull {
+                                    it.displayName == selectedDisplayName
+                                } ?: return@DropdownField
+                                equipmentCode = equipment.code
+                                equipmentName = equipment.name
+                                brandSelection = ""
+                                modelSelection = ""
+                                customBrand = ""
+                                customModel = ""
+                            }
                         )
                     }
-                    DropdownField(
-                        value = selectedEquipment?.displayName.orEmpty(),
-                        options = EquipmentCatalog.equipmentTypes.map { it.displayName },
-                        label = stringResource(id = R.string.field_equipment_code),
-                        placeholder = stringResource(id = R.string.field_equipment_code_placeholder),
-                        onOptionSelected = { selectedDisplayName ->
-                            val equipment = EquipmentCatalog.equipmentTypes.firstOrNull {
-                                it.displayName == selectedDisplayName
-                            } ?: return@DropdownField
-                            equipmentCode = equipment.code
-                            equipmentName = equipment.name
-                            brandSelection = ""
-                            modelSelection = ""
-                            customBrand = ""
-                            customModel = ""
-                        }
-                    )
                     FormTextField(
                         value = requestNumber,
                         onValueChange = {
@@ -849,7 +900,8 @@ fun NewActScreen(
                             requestNumberEditedManually = true
                         },
                         label = stringResource(id = R.string.field_request_number),
-                        placeholder = stringResource(id = R.string.field_request_number_placeholder)
+                        placeholder = stringResource(id = R.string.field_request_number_placeholder),
+                        readOnly = isAcceptanceDocument
                     )
                     FormTextField(
                         value = createdAt,
@@ -882,7 +934,7 @@ fun NewActScreen(
                         label = stringResource(id = R.string.field_organization_name),
                         placeholder = stringResource(id = R.string.field_organization_name_placeholder)
                     )
-                    if (!isTransferAcceptanceDocument) {
+                    if (!isTransferAcceptanceDocument && !isAcceptanceDocument) {
                         FormTextField(
                             value = organizationAddress,
                             onValueChange = { organizationAddress = it },
@@ -1057,6 +1109,36 @@ fun NewActScreen(
                                     stringResource(id = R.string.field_customer_address_placeholder)
                                 },
                                 minLines = 2
+                            )
+                        }
+                        if (isAcceptanceDocument) {
+                            DropdownField(
+                                value = equipmentTransferState.value,
+                                options = listOf(
+                                    stringResource(id = R.string.equipment_state_working),
+                                    stringResource(id = R.string.equipment_state_not_working),
+                                    stringResource(id = R.string.equipment_state_partially_working)
+                                ),
+                                label = stringResource(id = R.string.field_equipment_transfer_state),
+                                placeholder = stringResource(id = R.string.field_equipment_transfer_state),
+                                onOptionSelected = { selectedState ->
+                                    equipmentTransferState = EquipmentTransferState.fromValue(selectedState)
+                                }
+                            )
+                            Text(
+                                text = stringResource(id = R.string.acceptance_note_no_claims),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = stringResource(id = R.string.acceptance_note_work_warranty),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = stringResource(id = R.string.acceptance_note_parts_warranty),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         FormTextField(
@@ -1378,8 +1460,8 @@ fun NewActScreen(
                             customerAddress = customerAddress,
                             organizationName = organizationName,
                             organizationAddress = organizationAddress,
-                            customerRepresentative = manualCustomerRepresentative,
-                            customerRepresentativePhone = manualCustomerRepresentativePhone,
+                            customerRepresentative = if (isAcceptanceDocument) customerRepresentative else manualCustomerRepresentative,
+                            customerRepresentativePhone = if (isAcceptanceDocument) phone else manualCustomerRepresentativePhone,
                             enterpriseCardUri = enterpriseCardUri,
                             equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
@@ -1416,6 +1498,7 @@ fun NewActScreen(
                             },
                             rootCause = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) rootCause else "",
                             requiredWorks = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
+                            equipmentTransferState = if (isAcceptanceDocument) equipmentTransferState.value else "",
                             pdfPath = pdfPath,
                             comment = if (isDiagnosticDocument || isAcceptanceDocument) "" else comment,
                             photos = photos.toList(),

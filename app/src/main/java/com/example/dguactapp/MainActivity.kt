@@ -93,10 +93,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.dguactapp.ui.theme.DguActAppTheme
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.BufferedInputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipInputStream
 
 private enum class AppScreen {
     Start,
@@ -802,7 +805,10 @@ fun NewActScreen(
                     OutlinedButton(
                         onClick = {
                             enterpriseCardLauncher.launch(
-                                arrayOf("application/pdf", "image/jpeg", "image/png")
+                                arrayOf(
+                                    "application/pdf",
+                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                )
                             )
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -2656,14 +2662,43 @@ private fun extractEnterpriseCardData(
 }
 
 private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): String? {
+    val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
+    val fileName = resolveFileName(context, uri).lowercase(Locale.ROOT)
+    val isPdf = mimeType == "application/pdf" || fileName.endsWith(".pdf")
+    val isDocx = mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        fileName.endsWith(".docx")
+
     return runCatching {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            val buffered = BufferedInputStream(input)
-            val bytes = buffered.readBytes()
-            val decoded = bytes.toString(Charsets.UTF_8)
-            if (decoded.isNotBlank()) decoded else bytes.toString(Charsets.ISO_8859_1)
+        when {
+            isPdf -> readPdfText(context, uri)
+            isDocx -> readDocxText(context, uri)
+            else -> null
         }
     }.getOrNull()
+}
+
+private fun readPdfText(context: android.content.Context, uri: Uri): String {
+    return context.contentResolver.openInputStream(uri)?.use { input ->
+        PDDocument.load(input).use { document ->
+            PDFTextStripper().getText(document)
+        }
+    }.orEmpty()
+}
+
+private fun readDocxText(context: android.content.Context, uri: Uri): String {
+    return context.contentResolver.openInputStream(uri)?.use { input ->
+        ZipInputStream(BufferedInputStream(input)).use { zip ->
+            generateSequence { zip.nextEntry }.firstOrNull { it.name == "word/document.xml" }
+                ?: return@use ""
+            val xml = zip.readBytes().toString(Charsets.UTF_8)
+            xml
+                .replace("</w:p>", "\n")
+                .replace(Regex("<[^>]+>"), " ")
+                .replace(Regex("[\\t\\x0B\\f\\r ]+"), " ")
+                .replace(Regex("\\n+"), "\n")
+                .trim()
+        }
+    }.orEmpty()
 }
 
 @Preview(showBackground = true, showSystemUi = true)

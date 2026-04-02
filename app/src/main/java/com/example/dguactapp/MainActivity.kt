@@ -754,7 +754,7 @@ fun NewActScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = stringResource(id = R.string.new_act_screen_subtitle),
+                            text = documentType.title,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -882,26 +882,28 @@ fun NewActScreen(
                         label = stringResource(id = R.string.field_organization_name),
                         placeholder = stringResource(id = R.string.field_organization_name_placeholder)
                     )
-                    FormTextField(
-                        value = organizationAddress,
-                        onValueChange = { organizationAddress = it },
-                        label = stringResource(id = R.string.field_organization_address),
-                        placeholder = stringResource(id = R.string.field_organization_address_placeholder),
-                        minLines = 2
-                    )
-                    FormTextField(
-                        value = manualCustomerRepresentative,
-                        onValueChange = { manualCustomerRepresentative = it },
-                        label = stringResource(id = R.string.field_customer_representative),
-                        placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
-                    )
-                    FormTextField(
-                        value = manualCustomerRepresentativePhone,
-                        onValueChange = { manualCustomerRepresentativePhone = it },
-                        label = stringResource(id = R.string.field_customer_representative_phone),
-                        placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-                    )
+                    if (!isTransferAcceptanceDocument) {
+                        FormTextField(
+                            value = organizationAddress,
+                            onValueChange = { organizationAddress = it },
+                            label = stringResource(id = R.string.field_organization_address),
+                            placeholder = stringResource(id = R.string.field_organization_address_placeholder),
+                            minLines = 2
+                        )
+                        FormTextField(
+                            value = manualCustomerRepresentative,
+                            onValueChange = { manualCustomerRepresentative = it },
+                            label = stringResource(id = R.string.field_customer_representative),
+                            placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
+                        )
+                        FormTextField(
+                            value = manualCustomerRepresentativePhone,
+                            onValueChange = { manualCustomerRepresentativePhone = it },
+                            label = stringResource(id = R.string.field_customer_representative_phone),
+                            placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                        )
+                    }
                     if (isTransferAcceptanceDocument) {
                         FormTextField(
                             value = date,
@@ -1207,22 +1209,24 @@ fun NewActScreen(
                 }
             }
 
-            item {
-                DetailCard(title = stringResource(id = R.string.additional_info_title)) {
-                    FormTextField(
-                        value = pdfPath,
-                        onValueChange = { pdfPath = it },
-                        label = stringResource(id = R.string.field_pdf_path),
-                        placeholder = stringResource(id = R.string.field_pdf_path_placeholder)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    FormTextField(
-                        value = comment,
-                        onValueChange = { comment = it },
-                        label = stringResource(id = R.string.field_comment),
-                        placeholder = stringResource(id = R.string.field_comment_placeholder),
-                        minLines = 3
-                    )
+            if (!isTransferAcceptanceDocument) {
+                item {
+                    DetailCard(title = stringResource(id = R.string.additional_info_title)) {
+                        FormTextField(
+                            value = pdfPath,
+                            onValueChange = { pdfPath = it },
+                            label = stringResource(id = R.string.field_pdf_path),
+                            placeholder = stringResource(id = R.string.field_pdf_path_placeholder)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        FormTextField(
+                            value = comment,
+                            onValueChange = { comment = it },
+                            label = stringResource(id = R.string.field_comment),
+                            placeholder = stringResource(id = R.string.field_comment_placeholder),
+                            minLines = 3
+                        )
+                    }
                 }
             }
 

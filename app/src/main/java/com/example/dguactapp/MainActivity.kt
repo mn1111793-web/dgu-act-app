@@ -1011,12 +1011,14 @@ fun NewActScreen(
                             label = stringResource(id = R.string.field_date),
                             placeholder = stringResource(id = R.string.field_date_placeholder)
                         )
-                        FormTextField(
-                            value = customer,
-                            onValueChange = { customer = it },
-                            label = stringResource(id = R.string.field_customer),
-                            placeholder = stringResource(id = R.string.field_customer_placeholder)
-                        )
+                        if (!isDiagnosticDocument) {
+                            FormTextField(
+                                value = customer,
+                                onValueChange = { customer = it },
+                                label = stringResource(id = R.string.field_customer),
+                                placeholder = stringResource(id = R.string.field_customer_placeholder)
+                            )
+                        }
                         if (!isDiagnosticDocument) {
                             FormTextField(
                                 value = customerRepresentative,
@@ -1040,13 +1042,23 @@ fun NewActScreen(
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                         )
-                        FormTextField(
-                            value = customerAddress,
-                            onValueChange = { customerAddress = it },
-                            label = stringResource(id = R.string.field_customer_address),
-                            placeholder = stringResource(id = R.string.field_customer_address_placeholder),
-                            minLines = 2
-                        )
+                        if (!isDiagnosticDocument) {
+                            FormTextField(
+                                value = customerAddress,
+                                onValueChange = { customerAddress = it },
+                                label = if (isAcceptanceDocument) {
+                                    stringResource(id = R.string.field_transfer_place)
+                                } else {
+                                    stringResource(id = R.string.field_customer_address)
+                                },
+                                placeholder = if (isAcceptanceDocument) {
+                                    stringResource(id = R.string.field_transfer_place_placeholder)
+                                } else {
+                                    stringResource(id = R.string.field_customer_address_placeholder)
+                                },
+                                minLines = 2
+                            )
+                        }
                         FormTextField(
                             value = equipmentName,
                             onValueChange = {},
@@ -1054,45 +1066,62 @@ fun NewActScreen(
                             placeholder = stringResource(id = R.string.field_equipment_name_placeholder),
                             readOnly = true
                         )
-                        DropdownField(
-                            value = brandSelection,
-                            options = brandOptions,
-                            label = stringResource(id = R.string.field_brand),
-                            placeholder = stringResource(id = R.string.field_brand_placeholder),
-                            enabled = equipmentCode.isNotBlank(),
-                            onOptionSelected = { selectedBrand ->
-                                brandSelection = selectedBrand
-                                modelSelection = ""
-                                customBrand = if (selectedBrand == EquipmentCatalog.OTHER_OPTION) customBrand else ""
-                                customModel = ""
-                            }
-                        )
-                        if (brandSelection == EquipmentCatalog.OTHER_OPTION) {
+                        if (isAcceptanceDocument) {
                             FormTextField(
-                                value = customBrand,
-                                onValueChange = { customBrand = it },
-                                label = stringResource(id = R.string.field_custom_brand),
-                                placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
+                                value = resolvedBrand,
+                                onValueChange = {},
+                                label = stringResource(id = R.string.field_brand),
+                                placeholder = stringResource(id = R.string.field_brand_placeholder),
+                                readOnly = true
                             )
-                        }
-                        DropdownField(
-                            value = modelSelection,
-                            options = modelOptions,
-                            label = stringResource(id = R.string.field_model),
-                            placeholder = stringResource(id = R.string.field_model_placeholder),
-                            enabled = equipmentCode.isNotBlank(),
-                            onOptionSelected = { selectedModel ->
-                                modelSelection = selectedModel
-                                customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
-                            }
-                        )
-                        if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
                             FormTextField(
-                                value = customModel,
-                                onValueChange = { customModel = it },
-                                label = stringResource(id = R.string.field_custom_model),
-                                placeholder = stringResource(id = R.string.field_custom_model_placeholder)
+                                value = resolvedModel,
+                                onValueChange = {},
+                                label = stringResource(id = R.string.field_model),
+                                placeholder = stringResource(id = R.string.field_model_placeholder),
+                                readOnly = true
                             )
+                        } else {
+                            DropdownField(
+                                value = brandSelection,
+                                options = brandOptions,
+                                label = stringResource(id = R.string.field_brand),
+                                placeholder = stringResource(id = R.string.field_brand_placeholder),
+                                enabled = equipmentCode.isNotBlank(),
+                                onOptionSelected = { selectedBrand ->
+                                    brandSelection = selectedBrand
+                                    modelSelection = ""
+                                    customBrand = if (selectedBrand == EquipmentCatalog.OTHER_OPTION) customBrand else ""
+                                    customModel = ""
+                                }
+                            )
+                            if (brandSelection == EquipmentCatalog.OTHER_OPTION) {
+                                FormTextField(
+                                    value = customBrand,
+                                    onValueChange = { customBrand = it },
+                                    label = stringResource(id = R.string.field_custom_brand),
+                                    placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
+                                )
+                            }
+                            DropdownField(
+                                value = modelSelection,
+                                options = modelOptions,
+                                label = stringResource(id = R.string.field_model),
+                                placeholder = stringResource(id = R.string.field_model_placeholder),
+                                enabled = equipmentCode.isNotBlank(),
+                                onOptionSelected = { selectedModel ->
+                                    modelSelection = selectedModel
+                                    customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
+                                }
+                            )
+                            if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
+                                FormTextField(
+                                    value = customModel,
+                                    onValueChange = { customModel = it },
+                                    label = stringResource(id = R.string.field_custom_model),
+                                    placeholder = stringResource(id = R.string.field_custom_model_placeholder)
+                                )
+                            }
                         }
                         FormTextField(
                             value = serialNumber,
@@ -1100,13 +1129,15 @@ fun NewActScreen(
                             label = stringResource(id = R.string.field_serial_number),
                             placeholder = stringResource(id = R.string.field_serial_number_placeholder)
                         )
-                        FormTextField(
-                            value = operatingTime,
-                            onValueChange = { operatingTime = it },
-                            label = stringResource(id = R.string.field_operating_time),
-                            placeholder = stringResource(id = R.string.field_operating_time_placeholder),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-                        )
+                        if (!isAcceptanceDocument) {
+                            FormTextField(
+                                value = operatingTime,
+                                onValueChange = { operatingTime = it },
+                                label = stringResource(id = R.string.field_operating_time),
+                                placeholder = stringResource(id = R.string.field_operating_time_placeholder),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                            )
+                        }
                     }
                 }
             }
@@ -1209,7 +1240,7 @@ fun NewActScreen(
                 }
             }
 
-            if (!isTransferAcceptanceDocument) {
+            if (isDiagnosticDocument) {
                 item {
                     DetailCard(title = stringResource(id = R.string.additional_info_title)) {
                         FormTextField(
@@ -1217,14 +1248,6 @@ fun NewActScreen(
                             onValueChange = { pdfPath = it },
                             label = stringResource(id = R.string.field_pdf_path),
                             placeholder = stringResource(id = R.string.field_pdf_path_placeholder)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        FormTextField(
-                            value = comment,
-                            onValueChange = { comment = it },
-                            label = stringResource(id = R.string.field_comment),
-                            placeholder = stringResource(id = R.string.field_comment_placeholder),
-                            minLines = 3
                         )
                     }
                 }
@@ -1394,7 +1417,7 @@ fun NewActScreen(
                             rootCause = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) rootCause else "",
                             requiredWorks = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
                             pdfPath = pdfPath,
-                            comment = comment,
+                            comment = if (isDiagnosticDocument || isAcceptanceDocument) "" else comment,
                             photos = photos.toList(),
                             customerSignature = customerSignatureSaved.toList(),
                             executorSignature = executorSignatureSaved.toList(),

@@ -3,7 +3,7 @@ package com.example.dguactapp
 enum class DocumentType(val storageValue: String, val title: String) {
     DiagnosticAct(storageValue = "diagnostic_act", title = "Акт диагностики"),
     TransferAcceptanceAct(storageValue = "transfer_acceptance_act", title = "Акт приёма-передачи"),
-    AcceptanceAct(storageValue = "acceptance_act", title = "Акт сдачи-приёма");
+    AcceptanceAct(storageValue = "acceptance_act", title = "Акт сдачи-приёма из ремонта");
 
     companion object {
         fun fromStorageValue(value: String): DocumentType =

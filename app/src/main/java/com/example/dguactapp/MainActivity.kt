@@ -483,10 +483,10 @@ fun NewActScreen(
     }
     var customerRepresentative by rememberSaveable(existingAct?.id) {
         mutableStateOf(
-            if (existingAct?.documentType == DocumentType.DiagnosticAct) {
-                ""
-            } else {
-                existingAct?.malfunctionDescription.orEmpty()
+            if (existingAct?.documentType == DocumentType.DiagnosticAct) "" else {
+                existingAct?.customerRepresentative
+                    ?.ifBlank { existingRequest?.customerRepresentative.orEmpty() }
+                    .orEmpty()
             }
         )
     }
@@ -551,6 +551,27 @@ fun NewActScreen(
     }
     var signatureDecoding by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.signatureDecoding.orEmpty())
+    }
+    var customerSignatureDecoding by rememberSaveable(existingAct?.id) {
+        mutableStateOf(
+            existingAct?.customerSignatureDecoding
+                ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
+                .orEmpty()
+        )
+    }
+    var executorSignatureDecoding by rememberSaveable(existingAct?.id) {
+        mutableStateOf(
+            existingAct?.executorSignatureDecoding
+                ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
+                .orEmpty()
+        )
+    }
+    var directorSignatureDecoding by rememberSaveable(existingAct?.id) {
+        mutableStateOf(
+            existingAct?.directorSignatureDecoding
+                ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
+                .orEmpty()
+        )
     }
     var pendingCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
     var isImportingPhotos by remember { mutableStateOf(false) }
@@ -738,8 +759,7 @@ fun NewActScreen(
         customer = source?.customer?.ifBlank { null } ?: existingRequest?.customer.orEmpty()
         phone = source?.phone?.ifBlank { null } ?: existingRequest?.phone.orEmpty()
         customerAddress = source?.customerAddress?.ifBlank { null } ?: existingRequest?.customerAddress.orEmpty()
-        customerRepresentative = source?.malfunctionDescription?.ifBlank { null }
-            ?: existingRequest?.customerRepresentative.orEmpty()
+        customerRepresentative = existingRequest?.customerRepresentative.orEmpty()
         equipmentCode = source?.equipmentCode?.ifBlank { null } ?: existingRequest?.equipmentCode.orEmpty()
         equipmentName = source?.equipmentName?.ifBlank { null } ?: existingRequest?.equipmentName.orEmpty()
         serialNumber = source?.serialNumber?.ifBlank { null } ?: existingRequest?.serialNumber.orEmpty()
@@ -1388,13 +1408,6 @@ fun NewActScreen(
 
             item {
                 DetailCard(title = stringResource(id = R.string.signatures_section_title)) {
-                    FormTextField(
-                        value = signatureDecoding,
-                        onValueChange = { signatureDecoding = it },
-                        label = stringResource(id = R.string.field_signature_decoding),
-                        placeholder = stringResource(id = R.string.field_signature_decoding_placeholder)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
                     SignatureEditorCard(
                         title = stringResource(id = R.string.signature_customer_title),
                         draftSignature = customerSignatureDraft,
@@ -1413,6 +1426,13 @@ fun NewActScreen(
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FormTextField(
+                        value = customerSignatureDecoding,
+                        onValueChange = { customerSignatureDecoding = it },
+                        label = "${stringResource(id = R.string.field_signature_decoding)} (${stringResource(id = R.string.signature_customer_title)})",
+                        placeholder = stringResource(id = R.string.field_signature_decoding_placeholder)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     SignatureEditorCard(
@@ -1434,6 +1454,13 @@ fun NewActScreen(
                             ).show()
                         }
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FormTextField(
+                        value = executorSignatureDecoding,
+                        onValueChange = { executorSignatureDecoding = it },
+                        label = "${stringResource(id = R.string.field_signature_decoding)} (${stringResource(id = R.string.signature_executor_title)})",
+                        placeholder = stringResource(id = R.string.field_signature_decoding_placeholder)
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                     SignatureEditorCard(
                         title = stringResource(id = R.string.signature_director_title),
@@ -1453,6 +1480,13 @@ fun NewActScreen(
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FormTextField(
+                        value = directorSignatureDecoding,
+                        onValueChange = { directorSignatureDecoding = it },
+                        label = "${stringResource(id = R.string.field_signature_decoding)} (${stringResource(id = R.string.signature_director_title)})",
+                        placeholder = stringResource(id = R.string.field_signature_decoding_placeholder)
                     )
                 }
             }
@@ -1516,6 +1550,7 @@ fun NewActScreen(
                             customer = requestRecord.customer,
                             phone = phone,
                             customerAddress = customerAddress,
+                            organizationAddress = organizationAddress,
                             equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
                             brand = resolvedBrand,
@@ -1526,9 +1561,9 @@ fun NewActScreen(
                             externalCondition = if (isDiagnosticDocument) externalConditionSummary else transferExternalCondition,
                             malfunctionDescription = when {
                                 isDiagnosticDocument -> preliminaryConclusion
-                                isAcceptanceDocument -> customerRepresentative
                                 else -> malfunctionDescription
                             },
+                            customerRepresentative = customerRepresentative,
                             diagnosisType = if (isDiagnosticDocument) diagnosisType else DiagnosisType.Primary,
                             checklistItems = actChecklistItems,
                             preliminaryConclusion = if (isDiagnosticDocument || isAcceptanceDocument) {
@@ -1545,7 +1580,10 @@ fun NewActScreen(
                             customerSignature = customerSignatureSaved.toList(),
                             executorSignature = executorSignatureSaved.toList(),
                             directorSignature = directorSignatureSaved.toList(),
-                            signatureDecoding = signatureDecoding
+                            signatureDecoding = signatureDecoding,
+                            customerSignatureDecoding = customerSignatureDecoding,
+                            executorSignatureDecoding = executorSignatureDecoding,
+                            directorSignatureDecoding = directorSignatureDecoding
                         )
                         PhotoStorage.deleteMissingPhotos(existingAct?.photos.orEmpty(), act.photos)
                         saveCompleted = true
@@ -2018,9 +2056,10 @@ fun ActDetailsScreen(
                     PhotoGalleryReadonly(photos = act.photos)
                 }
             )
-            DetailCard(
-                title = stringResource(id = R.string.act_diagnostic_info_title),
-                content = {
+            if (act.documentType == DocumentType.DiagnosticAct) {
+                DetailCard(
+                    title = stringResource(id = R.string.act_diagnostic_info_title),
+                    content = {
                     InfoLine(stringResource(id = R.string.diagnosis_type_title), act.diagnosisType.title)
                     DiagnosticChecklistCatalog.sectionsFor(act.diagnosisType).forEach { section ->
                         Spacer(modifier = Modifier.height(8.dp))
@@ -2054,14 +2093,15 @@ fun ActDetailsScreen(
                         InfoLine(stringResource(id = R.string.root_cause_title), act.rootCause)
                         InfoLine(stringResource(id = R.string.required_works_title), act.requiredWorks)
                     }
-                }
-            )
-            DetailCard(
-                title = stringResource(id = R.string.additional_info_title),
-                content = {
-                    InfoLine(stringResource(id = R.string.field_pdf_path), act.pdfPath)
-                }
-            )
+                    }
+                )
+                DetailCard(
+                    title = stringResource(id = R.string.additional_info_title),
+                    content = {
+                        InfoLine(stringResource(id = R.string.field_pdf_path), act.pdfPath)
+                    }
+                )
+            }
             DetailCard(
                 title = stringResource(id = R.string.signatures_section_title),
                 content = {

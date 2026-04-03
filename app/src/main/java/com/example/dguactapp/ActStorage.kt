@@ -35,6 +35,7 @@ data class ActRecord(
     val customer: String,
     val phone: String = "",
     val customerAddress: String,
+    val organizationAddress: String = "",
     val equipmentCode: String,
     val equipmentName: String,
     val brand: String,
@@ -44,6 +45,7 @@ data class ActRecord(
     val completeness: String,
     val externalCondition: String,
     val malfunctionDescription: String,
+    val customerRepresentative: String = "",
     val diagnosisType: DiagnosisType = DiagnosisType.Primary,
     val checklistItems: List<ChecklistItemState> = emptyList(),
     val preliminaryConclusion: String = "",
@@ -56,7 +58,10 @@ data class ActRecord(
     val customerSignature: List<SignatureStroke> = emptyList(),
     val executorSignature: List<SignatureStroke> = emptyList(),
     val directorSignature: List<SignatureStroke> = emptyList(),
-    val signatureDecoding: String = ""
+    val signatureDecoding: String = "",
+    val customerSignatureDecoding: String = "",
+    val executorSignatureDecoding: String = "",
+    val directorSignatureDecoding: String = ""
 )
 
 object ActStorage {
@@ -147,6 +152,7 @@ object ActStorage {
         put("customer", customer)
         put("phone", phone)
         put("customerAddress", customerAddress)
+        put("organizationAddress", organizationAddress)
         put("equipmentCode", equipmentCode)
         put("equipmentName", equipmentName)
         put("brand", brand)
@@ -156,6 +162,7 @@ object ActStorage {
         put("completeness", completeness)
         put("externalCondition", externalCondition)
         put("malfunctionDescription", malfunctionDescription)
+        put("customerRepresentative", customerRepresentative)
         put("diagnosisType", diagnosisType.storageValue)
         put("preliminaryConclusion", preliminaryConclusion)
         put("rootCause", rootCause)
@@ -196,6 +203,9 @@ object ActStorage {
         put("executorSignature", executorSignature.toJsonArray())
         put("directorSignature", directorSignature.toJsonArray())
         put("signatureDecoding", signatureDecoding)
+        put("customerSignatureDecoding", customerSignatureDecoding)
+        put("executorSignatureDecoding", executorSignatureDecoding)
+        put("directorSignatureDecoding", directorSignatureDecoding)
     }
 
     private fun JSONObject.toActRecord(): ActRecord {
@@ -252,6 +262,7 @@ object ActStorage {
             customer = optString("customer"),
             phone = optString("phone"),
             customerAddress = optString("customerAddress"),
+            organizationAddress = optString("organizationAddress"),
             equipmentCode = optString("equipmentCode"),
             equipmentName = optString("equipmentName"),
             brand = optString("brand"),
@@ -260,7 +271,8 @@ object ActStorage {
             operatingTime = optString("operatingTime"),
             completeness = optString("completeness"),
             externalCondition = optString("externalCondition"),
-            malfunctionDescription = optString("malfunctionDescription")
+            malfunctionDescription = optString("malfunctionDescription"),
+            customerRepresentative = optString("customerRepresentative")
         )
 
         return legacyRecord.copy(
@@ -282,7 +294,13 @@ object ActStorage {
             customerSignature = optJSONArray("customerSignature").toSignatureStrokes(),
             executorSignature = optJSONArray("executorSignature").toSignatureStrokes(),
             directorSignature = optJSONArray("directorSignature").toSignatureStrokes(),
-            signatureDecoding = optString("signatureDecoding")
+            signatureDecoding = optString("signatureDecoding"),
+            customerSignatureDecoding = optString("customerSignatureDecoding")
+                .ifBlank { optString("signatureDecoding") },
+            executorSignatureDecoding = optString("executorSignatureDecoding")
+                .ifBlank { optString("signatureDecoding") },
+            directorSignatureDecoding = optString("directorSignatureDecoding")
+                .ifBlank { optString("signatureDecoding") }
         )
     }
 

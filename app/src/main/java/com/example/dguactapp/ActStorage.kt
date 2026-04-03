@@ -55,7 +55,8 @@ data class ActRecord(
     val photos: List<ActPhoto> = emptyList(),
     val customerSignature: List<SignatureStroke> = emptyList(),
     val executorSignature: List<SignatureStroke> = emptyList(),
-    val directorSignature: List<SignatureStroke> = emptyList()
+    val directorSignature: List<SignatureStroke> = emptyList(),
+    val signatureDecoding: String = ""
 )
 
 object ActStorage {
@@ -194,6 +195,7 @@ object ActStorage {
         put("customerSignature", customerSignature.toJsonArray())
         put("executorSignature", executorSignature.toJsonArray())
         put("directorSignature", directorSignature.toJsonArray())
+        put("signatureDecoding", signatureDecoding)
     }
 
     private fun JSONObject.toActRecord(): ActRecord {
@@ -279,7 +281,8 @@ object ActStorage {
             photos = photos,
             customerSignature = optJSONArray("customerSignature").toSignatureStrokes(),
             executorSignature = optJSONArray("executorSignature").toSignatureStrokes(),
-            directorSignature = optJSONArray("directorSignature").toSignatureStrokes()
+            directorSignature = optJSONArray("directorSignature").toSignatureStrokes(),
+            signatureDecoding = optString("signatureDecoding")
         )
     }
 

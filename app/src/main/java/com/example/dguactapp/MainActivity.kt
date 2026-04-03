@@ -120,6 +120,9 @@ private enum class EquipmentTransferState(val value: String) {
     }
 }
 
+private const val EXECUTOR_REQUISITES =
+    "Индивидуальный предприниматель Малышева Наталья Александровна, ЯНАО, г. Новый Уренгой, проспект Губкина, 21 б, кв. 52, ИНН 890411627911, ОГРНИП 318890100008958, \"ДГУ Ямал\"."
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -446,7 +449,7 @@ fun NewActScreen(
         mutableStateOf(existingAct?.customerAddress ?: existingRequest?.customerAddress.orEmpty())
     }
     var organizationName by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingRequest?.organizationName.orEmpty())
+        mutableStateOf(EXECUTOR_REQUISITES)
     }
     var organizationAddress by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingRequest?.organizationAddress.orEmpty())
@@ -486,6 +489,9 @@ fun NewActScreen(
                 existingAct?.malfunctionDescription.orEmpty()
             }
         )
+    }
+    var malfunctionDescription by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.malfunctionDescription.orEmpty())
     }
     var transferCompleteness by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.completeness.orEmpty())
@@ -542,6 +548,9 @@ fun NewActScreen(
     }
     val directorSignatureSaved = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
         existingAct?.directorSignature.orEmpty().toMutableStateList()
+    }
+    var signatureDecoding by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.signatureDecoding.orEmpty())
     }
     var pendingCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
     var isImportingPhotos by remember { mutableStateOf(false) }
@@ -932,9 +941,11 @@ fun NewActScreen(
                     )
                     FormTextField(
                         value = organizationName,
-                        onValueChange = { organizationName = it },
+                        onValueChange = {},
                         label = stringResource(id = R.string.field_organization_name),
-                        placeholder = stringResource(id = R.string.field_organization_name_placeholder)
+                        placeholder = stringResource(id = R.string.field_organization_name_placeholder),
+                        readOnly = true,
+                        minLines = 3
                     )
                     if (!isTransferAcceptanceDocument && !isAcceptanceDocument) {
                         FormTextField(
@@ -1007,6 +1018,25 @@ fun NewActScreen(
                                 placeholder = stringResource(id = R.string.field_custom_brand_placeholder)
                             )
                         }
+                        DropdownField(
+                            value = modelSelection,
+                            options = modelOptions,
+                            label = stringResource(id = R.string.field_model),
+                            placeholder = stringResource(id = R.string.field_model_placeholder),
+                            enabled = equipmentCode.isNotBlank(),
+                            onOptionSelected = { selectedModel ->
+                                modelSelection = selectedModel
+                                customModel = if (selectedModel == EquipmentCatalog.OTHER_OPTION) customModel else ""
+                            }
+                        )
+                        if (modelSelection == EquipmentCatalog.OTHER_OPTION) {
+                            FormTextField(
+                                value = customModel,
+                                onValueChange = { customModel = it },
+                                label = stringResource(id = R.string.field_custom_model),
+                                placeholder = stringResource(id = R.string.field_custom_model_placeholder)
+                            )
+                        }
                         FormTextField(
                             value = serialNumber,
                             onValueChange = { serialNumber = it },
@@ -1038,6 +1068,13 @@ fun NewActScreen(
                             onOptionSelected = { selectedCondition ->
                                 transferExternalCondition = selectedCondition
                             }
+                        )
+                        FormTextField(
+                            value = malfunctionDescription,
+                            onValueChange = { malfunctionDescription = it },
+                            label = stringResource(id = R.string.field_malfunction_description),
+                            placeholder = stringResource(id = R.string.field_malfunction_description_placeholder),
+                            minLines = 3
                         )
                     } else {
                         FormTextField(
@@ -1203,6 +1240,15 @@ fun NewActScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                             )
                         }
+                        if (isAcceptanceDocument) {
+                            FormTextField(
+                                value = malfunctionDescription,
+                                onValueChange = { malfunctionDescription = it },
+                                label = stringResource(id = R.string.field_malfunction_description),
+                                placeholder = stringResource(id = R.string.field_malfunction_description_placeholder),
+                                minLines = 3
+                            )
+                        }
                     }
                 }
             }
@@ -1342,6 +1388,13 @@ fun NewActScreen(
 
             item {
                 DetailCard(title = stringResource(id = R.string.signatures_section_title)) {
+                    FormTextField(
+                        value = signatureDecoding,
+                        onValueChange = { signatureDecoding = it },
+                        label = stringResource(id = R.string.field_signature_decoding),
+                        placeholder = stringResource(id = R.string.field_signature_decoding_placeholder)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                     SignatureEditorCard(
                         title = stringResource(id = R.string.signature_customer_title),
                         draftSignature = customerSignatureDraft,
@@ -1471,7 +1524,11 @@ fun NewActScreen(
                             operatingTime = operatingTime,
                             completeness = if (isDiagnosticDocument) completenessSummary else transferCompleteness,
                             externalCondition = if (isDiagnosticDocument) externalConditionSummary else transferExternalCondition,
-                            malfunctionDescription = if (isDiagnosticDocument) preliminaryConclusion else customerRepresentative,
+                            malfunctionDescription = when {
+                                isDiagnosticDocument -> preliminaryConclusion
+                                isAcceptanceDocument -> customerRepresentative
+                                else -> malfunctionDescription
+                            },
                             diagnosisType = if (isDiagnosticDocument) diagnosisType else DiagnosisType.Primary,
                             checklistItems = actChecklistItems,
                             preliminaryConclusion = if (isDiagnosticDocument || isAcceptanceDocument) {
@@ -1487,7 +1544,8 @@ fun NewActScreen(
                             photos = photos.toList(),
                             customerSignature = customerSignatureSaved.toList(),
                             executorSignature = executorSignatureSaved.toList(),
-                            directorSignature = directorSignatureSaved.toList()
+                            directorSignature = directorSignatureSaved.toList(),
+                            signatureDecoding = signatureDecoding
                         )
                         PhotoStorage.deleteMissingPhotos(existingAct?.photos.orEmpty(), act.photos)
                         saveCompleted = true
@@ -1550,7 +1608,7 @@ fun NewActScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        organizationName = enterpriseCardDetectedName
+                        organizationName = EXECUTOR_REQUISITES
                         organizationAddress = enterpriseCardDetectedAddress
                         showEnterpriseCardDetectedDialog = false
                     }

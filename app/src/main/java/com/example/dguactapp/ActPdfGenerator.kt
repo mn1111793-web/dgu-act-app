@@ -211,6 +211,10 @@ object ActPdfGenerator {
             drawKeyValue("Номер заявки", act.requestNumber)
             drawKeyValue("Дата создания", act.createdAt)
             drawKeyValue("Место составления", act.customerAddress)
+            drawKeyValue(
+                "Адрес заказчика/организации",
+                act.organizationAddress.ifBlank { act.customerAddress }
+            )
             drawSection("Исполнитель")
             drawKeyValue("Реквизиты", executorRequisites, blankLines = 3)
             drawSection("Заказчик")
@@ -220,7 +224,6 @@ object ActPdfGenerator {
             )
             if (documentType != DocumentType.DiagnosticAct) {
                 drawKeyValue("Заказчик", act.customer)
-                drawKeyValue("Адрес заказчика", act.customerAddress)
             }
             y += 2f
             drawSection("2. Сведения об оборудовании")
@@ -230,6 +233,11 @@ object ActPdfGenerator {
             drawKeyValue("Модель", act.model)
             drawKeyValue("Серийный номер", act.serialNumber)
             drawKeyValue("Наработка", act.operatingTime)
+            if (documentType == DocumentType.TransferAcceptanceAct) {
+                drawKeyValue("Комплектность", act.completeness, blankLines = 2)
+                drawKeyValue("Внешнее состояние", act.externalCondition, blankLines = 2)
+                drawKeyValue("Описание неисправности", act.malfunctionDescription, blankLines = 3)
+            }
         }
 
         fun drawAcceptanceEquipmentTable() {
@@ -337,9 +345,6 @@ object ActPdfGenerator {
                 transferSubjectSection.forEach { drawParagraph(it) }
                 drawSection("3. Условия приёма")
                 transferAcceptanceSection.forEach { drawParagraph(it) }
-                drawKeyValue("Комплектность", act.completeness, blankLines = 2)
-                drawKeyValue("Внешнее состояние", act.externalCondition, blankLines = 2)
-                drawKeyValue("Описание неисправности", act.malfunctionDescription, blankLines = 3)
                 drawSection("4. Хранение оборудования")
                 transferStorageSection.forEach { drawParagraph(it) }
                 drawSection("5. Электронное подписание")
@@ -352,7 +357,7 @@ object ActPdfGenerator {
                 drawSection("2. Данные сторон")
                 drawKeyValue("Исполнитель", "Исполнитель")
                 drawKeyValue("Заказчик", act.customer)
-                drawKeyValue("Представитель заказчика", act.malfunctionDescription)
+                drawKeyValue("Представитель заказчика", act.customerRepresentative)
                 drawKeyValue("Телефон заказчика", act.phone)
                 drawKeyValue("Место передачи имущества", act.customerAddress)
                 drawSection("3. Оборудование")
@@ -368,9 +373,21 @@ object ActPdfGenerator {
         }
 
         drawSection("6. Подписи сторон")
-        drawSignatureBlock("Заказчик", act.customerSignature, act.signatureDecoding)
-        drawSignatureBlock("Исполнитель", act.executorSignature, act.signatureDecoding)
-        drawSignatureBlock("Утверждено директором", act.directorSignature, act.signatureDecoding)
+        drawSignatureBlock(
+            "Заказчик",
+            act.customerSignature,
+            act.customerSignatureDecoding.ifBlank { act.signatureDecoding }
+        )
+        drawSignatureBlock(
+            "Исполнитель",
+            act.executorSignature,
+            act.executorSignatureDecoding.ifBlank { act.signatureDecoding }
+        )
+        drawSignatureBlock(
+            "Утверждено директором",
+            act.directorSignature,
+            act.directorSignatureDecoding.ifBlank { act.signatureDecoding }
+        )
 
         if (mode == PdfMode.Filled && act.photos.isNotEmpty()) {
             act.photos.forEachIndexed { index, photo ->

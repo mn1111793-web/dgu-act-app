@@ -991,10 +991,29 @@ fun NewActScreen(
                     }
                     if (isTransferAcceptanceDocument) {
                         FormTextField(
+                            value = date,
+                            onValueChange = { date = it },
+                            label = stringResource(id = R.string.field_acceptance_date),
+                            placeholder = stringResource(id = R.string.field_date_placeholder)
+                        )
+                        FormTextField(
+                            value = customer,
+                            onValueChange = { customer = it },
+                            label = stringResource(id = R.string.field_customer),
+                            placeholder = stringResource(id = R.string.field_customer_placeholder)
+                        )
+                        FormTextField(
+                            value = organizationAddress,
+                            onValueChange = { organizationAddress = it },
+                            label = stringResource(id = R.string.field_compilation_place),
+                            placeholder = stringResource(id = R.string.field_compilation_place_placeholder),
+                            minLines = 2
+                        )
+                        FormTextField(
                             value = customerAddress,
                             onValueChange = { customerAddress = it },
-                            label = stringResource(id = R.string.field_organization_address),
-                            placeholder = stringResource(id = R.string.field_organization_address_placeholder),
+                            label = stringResource(id = R.string.field_customer_address),
+                            placeholder = stringResource(id = R.string.field_customer_address_placeholder),
                             minLines = 2
                         )
                         FormTextField(

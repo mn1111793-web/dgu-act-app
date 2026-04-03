@@ -23,7 +23,8 @@ object EquipmentCatalog {
             brands = listOf(
                 EquipmentBrand("FG Wilson", listOf("P110-3", "P165-5")),
                 EquipmentBrand("Cummins", listOf("C110 D5", "C220 D5")),
-                EquipmentBrand("Teksan", listOf("TJ88PE5A", "TJ275PE5C"))
+                EquipmentBrand("Teksan", listOf("TJ88PE5A", "TJ275PE5C")),
+                EquipmentBrand("TSS", listOf("SDG 10000EH", "SDG 12000EHA"))
             )
         ),
         EquipmentType(

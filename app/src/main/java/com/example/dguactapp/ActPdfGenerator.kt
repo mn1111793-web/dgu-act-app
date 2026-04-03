@@ -23,6 +23,8 @@ object ActPdfGenerator {
     private const val pageHeight = 842
     private const val margin = 36f
     private const val blockGap = 12f
+    private const val executorRequisites =
+        "Индивидуальный предприниматель Малышева Наталья Александровна, ЯНАО, г. Новый Уренгой, проспект Губкина, 21 б, кв. 52, ИНН 890411627911, ОГРНИП 318890100008958, \"ДГУ Ямал\"."
 
     private val legalSection = listOf(
         "3.1. Заказчик подтверждает, что оборудование передано Исполнителю для проведения диагностики.",
@@ -175,7 +177,7 @@ object ActPdfGenerator {
             }
         }
 
-        fun drawSignatureBlock(title: String, signature: List<SignatureStroke>) {
+        fun drawSignatureBlock(title: String, signature: List<SignatureStroke>, decoding: String) {
             val boxHeight = 74f
             drawLine(title, bodyPaint)
             ensureSpace(boxHeight + 26f)
@@ -190,7 +192,7 @@ object ActPdfGenerator {
             y = rect.bottom + 14f
             canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
             y += 12f
-            drawLine("(подпись / расшифровка)", smallPaint)
+            drawLine(if (decoding.isBlank()) "(подпись / расшифровка)" else "(подпись / $decoding)", smallPaint)
             y += 4f
         }
 
@@ -207,10 +209,10 @@ object ActPdfGenerator {
         fun drawBaseInfoSections(documentType: DocumentType) {
             drawSection("Дата и место")
             drawKeyValue("Номер заявки", act.requestNumber)
-            drawKeyValue("Дата", act.date)
+            drawKeyValue("Дата создания", act.createdAt)
             drawKeyValue("Место составления", act.customerAddress)
             drawSection("Исполнитель")
-            drawKeyValue("Организация", "Исполнитель")
+            drawKeyValue("Реквизиты", executorRequisites, blankLines = 3)
             drawSection("Заказчик")
             drawKeyValue(
                 if (documentType == DocumentType.DiagnosticAct) "Телефон организации" else "Телефон",
@@ -366,9 +368,9 @@ object ActPdfGenerator {
         }
 
         drawSection("6. Подписи сторон")
-        drawSignatureBlock("Заказчик", act.customerSignature)
-        drawSignatureBlock("Исполнитель", act.executorSignature)
-        drawSignatureBlock("Утверждено директором", act.directorSignature)
+        drawSignatureBlock("Заказчик", act.customerSignature, act.signatureDecoding)
+        drawSignatureBlock("Исполнитель", act.executorSignature, act.signatureDecoding)
+        drawSignatureBlock("Утверждено директором", act.directorSignature, act.signatureDecoding)
 
         if (mode == PdfMode.Filled && act.photos.isNotEmpty()) {
             act.photos.forEachIndexed { index, photo ->

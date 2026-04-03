@@ -93,6 +93,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -1039,12 +1040,6 @@ fun NewActScreen(
                             placeholder = stringResource(id = R.string.field_date_placeholder)
                         )
                         FormTextField(
-                            value = customer,
-                            onValueChange = { customer = it },
-                            label = stringResource(id = R.string.field_customer),
-                            placeholder = stringResource(id = R.string.field_customer_placeholder)
-                        )
-                        FormTextField(
                             value = compilationPlace,
                             onValueChange = { compilationPlace = it },
                             label = stringResource(id = R.string.field_compilation_place),
@@ -1089,13 +1084,6 @@ fun NewActScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                             )
                         }
-                        FormTextField(
-                            value = customerAddress,
-                            onValueChange = { customerAddress = it },
-                            label = stringResource(id = R.string.field_customer_address),
-                            placeholder = stringResource(id = R.string.field_customer_address_placeholder),
-                            minLines = 2
-                        )
                         DetailCard(title = stringResource(id = R.string.customer_representative_block_title)) {
                             FormTextField(
                                 value = customerRepresentative,
@@ -2759,16 +2747,21 @@ private fun DatePickerField(
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = parseDateDisplayToMillis(value))
     OutlinedTextField(
         value = value,
-        onValueChange = {},
+        onValueChange = onDateSelected,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { showDialog = true },
+            .onFocusChanged { focusState ->
+                if (focusState.isFocused) {
+                    showDialog = true
+                }
+            },
         label = { Text(text = label) },
         placeholder = { Text(text = placeholder) },
         shape = RoundedCornerShape(18.dp),
-        readOnly = true
+        readOnly = false
     )
     if (showDialog) {
+        datePickerState.selectedDateMillis = parseDateDisplayToMillis(value)
         DatePickerDialog(
             onDismissRequest = { showDialog = false },
             confirmButton = {

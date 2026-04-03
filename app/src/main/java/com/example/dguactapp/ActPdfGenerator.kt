@@ -210,7 +210,8 @@ object ActPdfGenerator {
             drawSection("Дата и место")
             drawKeyValue("Номер заявки", act.requestNumber)
             drawKeyValue("Дата создания", act.createdAt)
-            drawKeyValue("Место составления", act.organizationAddress)
+            drawKeyValue("Место составления", act.compilationPlace)
+            drawKeyValue("Адрес организации", act.organizationAddress)
             drawKeyValue(
                 "Адрес заказчика",
                 act.customerAddress
@@ -220,10 +221,12 @@ object ActPdfGenerator {
             drawSection("Заказчик")
             drawKeyValue(
                 if (documentType == DocumentType.DiagnosticAct) "Телефон организации" else "Телефон",
-                act.phone
+                act.organizationPhone.ifBlank { act.phone }
             )
             if (documentType != DocumentType.DiagnosticAct) {
                 drawKeyValue("Заказчик", act.customer)
+                drawKeyValue("Представитель заказчика", act.customerRepresentative)
+                drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
             }
             y += 2f
             drawSection("2. Сведения об оборудовании")
@@ -358,7 +361,7 @@ object ActPdfGenerator {
                 drawKeyValue("Исполнитель", "Исполнитель")
                 drawKeyValue("Заказчик", act.customer)
                 drawKeyValue("Представитель заказчика", act.customerRepresentative)
-                drawKeyValue("Телефон заказчика", act.phone)
+                drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
                 drawKeyValue("Место передачи имущества", act.customerAddress)
                 drawSection("3. Оборудование")
                 drawAcceptanceEquipmentTable()

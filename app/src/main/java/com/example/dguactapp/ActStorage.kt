@@ -13,9 +13,13 @@ data class RequestRecord(
     val phone: String,
     val customerAddress: String,
     val organizationName: String,
+    val organizationInn: String,
+    val organizationOgrn: String,
     val organizationAddress: String,
+    val organizationPhone: String,
     val customerRepresentative: String,
     val customerRepresentativePhone: String,
+    val compilationPlace: String,
     val enterpriseCardUri: String,
     val equipmentCode: String,
     val equipmentName: String,
@@ -35,7 +39,12 @@ data class ActRecord(
     val customer: String,
     val phone: String = "",
     val customerAddress: String,
+    val organizationName: String = "",
+    val organizationInn: String = "",
+    val organizationOgrn: String = "",
     val organizationAddress: String = "",
+    val organizationPhone: String = "",
+    val compilationPlace: String = "",
     val equipmentCode: String,
     val equipmentName: String,
     val brand: String,
@@ -46,6 +55,7 @@ data class ActRecord(
     val externalCondition: String,
     val malfunctionDescription: String,
     val customerRepresentative: String = "",
+    val customerRepresentativePhone: String = "",
     val diagnosisType: DiagnosisType = DiagnosisType.Primary,
     val checklistItems: List<ChecklistItemState> = emptyList(),
     val preliminaryConclusion: String = "",
@@ -152,7 +162,12 @@ object ActStorage {
         put("customer", customer)
         put("phone", phone)
         put("customerAddress", customerAddress)
+        put("organizationName", organizationName)
+        put("organizationInn", organizationInn)
+        put("organizationOgrn", organizationOgrn)
         put("organizationAddress", organizationAddress)
+        put("organizationPhone", organizationPhone)
+        put("compilationPlace", compilationPlace)
         put("equipmentCode", equipmentCode)
         put("equipmentName", equipmentName)
         put("brand", brand)
@@ -163,6 +178,7 @@ object ActStorage {
         put("externalCondition", externalCondition)
         put("malfunctionDescription", malfunctionDescription)
         put("customerRepresentative", customerRepresentative)
+        put("customerRepresentativePhone", customerRepresentativePhone)
         put("diagnosisType", diagnosisType.storageValue)
         put("preliminaryConclusion", preliminaryConclusion)
         put("rootCause", rootCause)
@@ -262,7 +278,12 @@ object ActStorage {
             customer = optString("customer"),
             phone = optString("phone"),
             customerAddress = optString("customerAddress"),
+            organizationName = optString("organizationName"),
+            organizationInn = optString("organizationInn"),
+            organizationOgrn = optString("organizationOgrn"),
             organizationAddress = optString("organizationAddress"),
+            organizationPhone = optString("organizationPhone").ifBlank { optString("phone") },
+            compilationPlace = optString("compilationPlace"),
             equipmentCode = optString("equipmentCode"),
             equipmentName = optString("equipmentName"),
             brand = optString("brand"),
@@ -272,7 +293,8 @@ object ActStorage {
             completeness = optString("completeness"),
             externalCondition = optString("externalCondition"),
             malfunctionDescription = optString("malfunctionDescription"),
-            customerRepresentative = optString("customerRepresentative")
+            customerRepresentative = optString("customerRepresentative"),
+            customerRepresentativePhone = optString("customerRepresentativePhone")
         )
 
         return legacyRecord.copy(
@@ -412,9 +434,13 @@ object RequestStorage {
         put("phone", phone)
         put("customerAddress", customerAddress)
         put("organizationName", organizationName)
+        put("organizationInn", organizationInn)
+        put("organizationOgrn", organizationOgrn)
         put("organizationAddress", organizationAddress)
+        put("organizationPhone", organizationPhone)
         put("customerRepresentative", customerRepresentative)
         put("customerRepresentativePhone", customerRepresentativePhone)
+        put("compilationPlace", compilationPlace)
         put("enterpriseCardUri", enterpriseCardUri)
         put("equipmentCode", equipmentCode)
         put("equipmentName", equipmentName)
@@ -432,9 +458,13 @@ object RequestStorage {
         phone = optString("phone"),
         customerAddress = optString("customerAddress"),
         organizationName = optString("organizationName"),
+        organizationInn = optString("organizationInn"),
+        organizationOgrn = optString("organizationOgrn"),
         organizationAddress = optString("organizationAddress"),
+        organizationPhone = optString("organizationPhone").ifBlank { optString("phone") },
         customerRepresentative = optString("customerRepresentative"),
         customerRepresentativePhone = optString("customerRepresentativePhone"),
+        compilationPlace = optString("compilationPlace"),
         enterpriseCardUri = optString("enterpriseCardUri"),
         equipmentCode = optString("equipmentCode"),
         equipmentName = optString("equipmentName"),
@@ -452,10 +482,14 @@ private fun ActRecord.toRequestRecord(): RequestRecord = RequestRecord(
     customer = customer,
     phone = phone,
     customerAddress = customerAddress,
-    organizationName = "",
-    organizationAddress = "",
-    customerRepresentative = "",
-    customerRepresentativePhone = "",
+    organizationName = organizationName,
+    organizationInn = organizationInn,
+    organizationOgrn = organizationOgrn,
+    organizationAddress = organizationAddress,
+    organizationPhone = organizationPhone,
+    customerRepresentative = customerRepresentative,
+    customerRepresentativePhone = customerRepresentativePhone,
+    compilationPlace = compilationPlace,
     enterpriseCardUri = "",
     equipmentCode = equipmentCode,
     equipmentName = equipmentName,

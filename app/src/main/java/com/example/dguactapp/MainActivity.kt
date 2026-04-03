@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.Canvas
@@ -51,6 +52,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -69,6 +73,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -97,9 +102,11 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.BufferedInputStream
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.launch
 
 private enum class AppScreen {
     Start,
@@ -206,9 +213,13 @@ private fun DguActApp() {
                     phone = "",
                     customerAddress = "",
                     organizationName = "",
+                    organizationInn = "",
+                    organizationOgrn = "",
                     organizationAddress = "",
+                    organizationPhone = "",
                     customerRepresentative = "",
                     customerRepresentativePhone = "",
+                    compilationPlace = "",
                     enterpriseCardUri = "",
                     equipmentCode = "",
                     equipmentName = "",
@@ -449,10 +460,22 @@ fun NewActScreen(
         mutableStateOf(existingAct?.customerAddress ?: existingRequest?.customerAddress.orEmpty())
     }
     var organizationName by rememberSaveable(existingAct?.id) {
-        mutableStateOf(EXECUTOR_REQUISITES)
+        mutableStateOf(existingAct?.organizationName ?: existingRequest?.organizationName.orEmpty())
+    }
+    var organizationInn by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.organizationInn ?: existingRequest?.organizationInn.orEmpty())
+    }
+    var organizationOgrn by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.organizationOgrn ?: existingRequest?.organizationOgrn.orEmpty())
     }
     var organizationAddress by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingRequest?.organizationAddress.orEmpty())
+        mutableStateOf(existingAct?.organizationAddress ?: existingRequest?.organizationAddress.orEmpty())
+    }
+    var organizationPhone by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.organizationPhone ?: existingRequest?.organizationPhone.orEmpty())
+    }
+    var compilationPlace by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.compilationPlace ?: existingRequest?.compilationPlace.orEmpty())
     }
     var manualCustomerRepresentative by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingRequest?.customerRepresentative.orEmpty())
@@ -489,6 +512,9 @@ fun NewActScreen(
                     .orEmpty()
             }
         )
+    }
+    var customerRepresentativePhone by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.customerRepresentativePhone ?: existingRequest?.customerRepresentativePhone.orEmpty())
     }
     var malfunctionDescription by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.malfunctionDescription.orEmpty())
@@ -757,9 +783,11 @@ fun NewActScreen(
         requestNumber = source?.requestNumber?.ifBlank { null }
             ?: existingRequest?.requestNumber.orEmpty()
         customer = source?.customer?.ifBlank { null } ?: existingRequest?.customer.orEmpty()
-        phone = source?.phone?.ifBlank { null } ?: existingRequest?.phone.orEmpty()
+        organizationPhone = source?.organizationPhone?.ifBlank { null } ?: existingRequest?.organizationPhone.orEmpty()
         customerAddress = source?.customerAddress?.ifBlank { null } ?: existingRequest?.customerAddress.orEmpty()
         customerRepresentative = existingRequest?.customerRepresentative.orEmpty()
+        customerRepresentativePhone = source?.customerRepresentativePhone?.ifBlank { null }
+            ?: existingRequest?.customerRepresentativePhone.orEmpty()
         equipmentCode = source?.equipmentCode?.ifBlank { null } ?: existingRequest?.equipmentCode.orEmpty()
         equipmentName = source?.equipmentName?.ifBlank { null } ?: existingRequest?.equipmentName.orEmpty()
         serialNumber = source?.serialNumber?.ifBlank { null } ?: existingRequest?.serialNumber.orEmpty()
@@ -816,6 +844,19 @@ fun NewActScreen(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
     }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val signatureSectionIndex = remember(isDiagnosticDocument, diagnosisType) {
+        var index = 2
+        if (isDiagnosticDocument) {
+            index += 1 // diagnosis type block
+            index += DiagnosticChecklistCatalog.sectionsFor(diagnosisType).size
+            index += 1 // preliminary conclusion
+            index += 1 // additional info
+            if (diagnosisType == DiagnosisType.Advanced) index += 1
+        }
+        index
+    }
 
     BackHandler(onBack = onBackClick)
 
@@ -854,6 +895,7 @@ fun NewActScreen(
                 .fillMaxSize()
                 .imePadding()
                 .navigationBarsPadding(),
+            state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp,
                 top = innerPadding.calculateTopPadding() + 12.dp,
@@ -934,12 +976,11 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_request_number_placeholder),
                         readOnly = isAcceptanceDocument
                     )
-                    FormTextField(
+                    DatePickerField(
                         value = createdAt,
-                        onValueChange = { createdAt = it },
+                        onDateSelected = { createdAt = it },
                         label = stringResource(id = R.string.field_created_at),
-                        placeholder = stringResource(id = R.string.field_created_at_placeholder),
-                        readOnly = !isTransferAcceptanceDocument
+                        placeholder = stringResource(id = R.string.field_created_at_placeholder)
                     )
                     val documentTypeOptions = DocumentType.values().toList()
                     DropdownField(
@@ -959,14 +1000,15 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_status_placeholder),
                         readOnly = true
                     )
-                    FormTextField(
-                        value = organizationName,
-                        onValueChange = {},
-                        label = stringResource(id = R.string.field_organization_name),
-                        placeholder = stringResource(id = R.string.field_organization_name_placeholder),
-                        readOnly = true,
-                        minLines = 3
-                    )
+                    if (!isTransferAcceptanceDocument) {
+                        FormTextField(
+                            value = organizationName,
+                            onValueChange = { organizationName = it },
+                            label = stringResource(id = R.string.field_organization_name),
+                            placeholder = stringResource(id = R.string.field_organization_name_placeholder),
+                            minLines = 2
+                        )
+                    }
                     if (!isTransferAcceptanceDocument && !isAcceptanceDocument) {
                         FormTextField(
                             value = organizationAddress,
@@ -990,9 +1032,9 @@ fun NewActScreen(
                         )
                     }
                     if (isTransferAcceptanceDocument) {
-                        FormTextField(
+                        DatePickerField(
                             value = date,
-                            onValueChange = { date = it },
+                            onDateSelected = { date = it },
                             label = stringResource(id = R.string.field_acceptance_date),
                             placeholder = stringResource(id = R.string.field_date_placeholder)
                         )
@@ -1003,12 +1045,50 @@ fun NewActScreen(
                             placeholder = stringResource(id = R.string.field_customer_placeholder)
                         )
                         FormTextField(
-                            value = organizationAddress,
-                            onValueChange = { organizationAddress = it },
+                            value = compilationPlace,
+                            onValueChange = { compilationPlace = it },
                             label = stringResource(id = R.string.field_compilation_place),
                             placeholder = stringResource(id = R.string.field_compilation_place_placeholder),
                             minLines = 2
                         )
+                        DetailCard(title = stringResource(id = R.string.organization_details_title)) {
+                            FormTextField(
+                                value = organizationName,
+                                onValueChange = { organizationName = it },
+                                label = stringResource(id = R.string.field_organization_name),
+                                placeholder = stringResource(id = R.string.field_organization_name_placeholder)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FormTextField(
+                                value = organizationInn,
+                                onValueChange = { organizationInn = it },
+                                label = stringResource(id = R.string.field_organization_inn),
+                                placeholder = stringResource(id = R.string.field_organization_inn_placeholder)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FormTextField(
+                                value = organizationOgrn,
+                                onValueChange = { organizationOgrn = it },
+                                label = stringResource(id = R.string.field_organization_ogrn),
+                                placeholder = stringResource(id = R.string.field_organization_ogrn_placeholder)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FormTextField(
+                                value = organizationAddress,
+                                onValueChange = { organizationAddress = it },
+                                label = stringResource(id = R.string.field_organization_address),
+                                placeholder = stringResource(id = R.string.field_organization_address_placeholder),
+                                minLines = 2
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FormTextField(
+                                value = organizationPhone,
+                                onValueChange = { organizationPhone = it },
+                                label = stringResource(id = R.string.field_phone),
+                                placeholder = stringResource(id = R.string.field_phone_placeholder),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                            )
+                        }
                         FormTextField(
                             value = customerAddress,
                             onValueChange = { customerAddress = it },
@@ -1016,19 +1096,22 @@ fun NewActScreen(
                             placeholder = stringResource(id = R.string.field_customer_address_placeholder),
                             minLines = 2
                         )
-                        FormTextField(
-                            value = customerRepresentative,
-                            onValueChange = { customerRepresentative = it },
-                            label = stringResource(id = R.string.field_customer_representative),
-                            placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
-                        )
-                        FormTextField(
-                            value = phone,
-                            onValueChange = { phone = it },
-                            label = stringResource(id = R.string.field_customer_representative_phone),
-                            placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-                        )
+                        DetailCard(title = stringResource(id = R.string.customer_representative_block_title)) {
+                            FormTextField(
+                                value = customerRepresentative,
+                                onValueChange = { customerRepresentative = it },
+                                label = stringResource(id = R.string.field_customer_representative),
+                                placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FormTextField(
+                                value = customerRepresentativePhone,
+                                onValueChange = { customerRepresentativePhone = it },
+                                label = stringResource(id = R.string.field_customer_representative_phone),
+                                placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                            )
+                        }
                         FormTextField(
                             value = equipmentName,
                             onValueChange = {},
@@ -1139,8 +1222,14 @@ fun NewActScreen(
                             )
                         }
                         FormTextField(
-                            value = phone,
-                            onValueChange = { phone = it },
+                            value = if (isDiagnosticDocument) phone else customerRepresentativePhone,
+                            onValueChange = {
+                                if (isDiagnosticDocument) {
+                                    phone = it
+                                } else {
+                                    customerRepresentativePhone = it
+                                }
+                            },
                             label = if (isDiagnosticDocument) {
                                 stringResource(id = R.string.field_phone)
                             } else {
@@ -1513,6 +1602,17 @@ fun NewActScreen(
             item {
                 Button(
                     onClick = {
+                        if (customerSignatureSaved.isEmpty()) {
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.signature_customer_required_error),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(signatureSectionIndex)
+                            }
+                            return@Button
+                        }
                         val completenessSummary = checklistItems.findCommentByKey("visual_completeness")
                         val externalConditionSummary = listOf(
                             checklistItems.findCommentByKey("visual_casing_condition"),
@@ -1548,9 +1648,21 @@ fun NewActScreen(
                             phone = phone,
                             customerAddress = customerAddress,
                             organizationName = organizationName,
+                            organizationInn = organizationInn,
+                            organizationOgrn = organizationOgrn,
                             organizationAddress = organizationAddress,
-                            customerRepresentative = if (isAcceptanceDocument) customerRepresentative else manualCustomerRepresentative,
-                            customerRepresentativePhone = if (isAcceptanceDocument) phone else manualCustomerRepresentativePhone,
+                            organizationPhone = organizationPhone,
+                            customerRepresentative = if (isTransferAcceptanceDocument || isAcceptanceDocument) {
+                                customerRepresentative
+                            } else {
+                                manualCustomerRepresentative
+                            },
+                            customerRepresentativePhone = if (isTransferAcceptanceDocument || isAcceptanceDocument) {
+                                customerRepresentativePhone
+                            } else {
+                                manualCustomerRepresentativePhone
+                            },
+                            compilationPlace = compilationPlace,
                             enterpriseCardUri = enterpriseCardUri,
                             equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
@@ -1567,9 +1679,14 @@ fun NewActScreen(
                             requestNumber = requestRecord.requestNumber,
                             date = requestRecord.date,
                             customer = requestRecord.customer,
-                            phone = phone,
+                            phone = if (isTransferAcceptanceDocument) organizationPhone else phone,
                             customerAddress = customerAddress,
+                            organizationName = organizationName,
+                            organizationInn = organizationInn,
+                            organizationOgrn = organizationOgrn,
                             organizationAddress = organizationAddress,
+                            organizationPhone = organizationPhone,
+                            compilationPlace = compilationPlace,
                             equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
                             brand = resolvedBrand,
@@ -1583,6 +1700,7 @@ fun NewActScreen(
                                 else -> malfunctionDescription
                             },
                             customerRepresentative = customerRepresentative,
+                            customerRepresentativePhone = customerRepresentativePhone,
                             diagnosisType = if (isDiagnosticDocument) diagnosisType else DiagnosisType.Primary,
                             checklistItems = actChecklistItems,
                             preliminaryConclusion = if (isDiagnosticDocument || isAcceptanceDocument) {
@@ -1665,7 +1783,7 @@ fun NewActScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        organizationName = EXECUTOR_REQUISITES
+                        organizationName = enterpriseCardDetectedName.ifBlank { EXECUTOR_REQUISITES }
                         organizationAddress = enterpriseCardDetectedAddress
                         showEnterpriseCardDetectedDialog = false
                     }
@@ -2629,6 +2747,49 @@ private fun FormTextField(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerField(
+    value: String,
+    onDateSelected: (String) -> Unit,
+    label: String,
+    placeholder: String
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = parseDateDisplayToMillis(value))
+    OutlinedTextField(
+        value = value,
+        onValueChange = {},
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showDialog = true },
+        label = { Text(text = label) },
+        placeholder = { Text(text = placeholder) },
+        shape = RoundedCornerShape(18.dp),
+        readOnly = true
+    )
+    if (showDialog) {
+        DatePickerDialog(
+            onDismissRequest = { showDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { onDateSelected(formatDateDisplay(it)) }
+                        showDialog = false
+                    }
+                ) { Text(text = "OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text(text = stringResource(id = R.string.cancel_button))
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}
+
 @Composable
 private fun DropdownField(
     value: String,
@@ -2824,6 +2985,18 @@ private fun currentDateDisplay(): String =
 private fun currentDateForRequestNumber(): String =
     SimpleDateFormat("ddMMyy", Locale.getDefault()).format(Date())
 
+private fun parseDateDisplayToMillis(value: String): Long? {
+    val parsedDate = runCatching {
+        SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).apply { isLenient = false }.parse(value)
+    }.getOrNull() ?: return null
+    return parsedDate.time
+}
+
+private fun formatDateDisplay(millis: Long): String {
+    val calendar = Calendar.getInstance().apply { timeInMillis = millis }
+    return SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(calendar.time)
+}
+
 private fun resolveFileName(context: android.content.Context, uri: Uri): String {
     val fileName = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -2972,9 +3145,13 @@ private fun RequestsListScreenPreview() {
                     phone = "+7 900 000-00-00",
                     customerAddress = "г. Москва, ул. Центральная, д. 10",
                     organizationName = "ООО «Энерго Сервис»",
+                    organizationInn = "7701234567",
+                    organizationOgrn = "1027700132195",
                     organizationAddress = "г. Москва, ул. Центральная, д. 10",
+                    organizationPhone = "+7 495 000-00-00",
                     customerRepresentative = "Иванов И.И.",
                     customerRepresentativePhone = "+7 900 000-00-00",
+                    compilationPlace = "г. Москва",
                     enterpriseCardUri = "",
                     equipmentCode = "DGU",
                     equipmentName = "дизельный генератор",

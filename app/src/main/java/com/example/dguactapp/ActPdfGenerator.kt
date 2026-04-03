@@ -210,10 +210,10 @@ object ActPdfGenerator {
             drawSection("Дата и место")
             drawKeyValue("Номер заявки", act.requestNumber)
             drawKeyValue("Дата создания", act.createdAt)
-            drawKeyValue("Место составления", act.customerAddress)
+            drawKeyValue("Место составления", act.organizationAddress)
             drawKeyValue(
-                "Адрес заказчика/организации",
-                act.organizationAddress.ifBlank { act.customerAddress }
+                "Адрес заказчика",
+                act.customerAddress
             )
             drawSection("Исполнитель")
             drawKeyValue("Реквизиты", executorRequisites, blankLines = 3)

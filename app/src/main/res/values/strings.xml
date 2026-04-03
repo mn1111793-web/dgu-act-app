@@ -37,6 +37,7 @@
     <string name="field_organization_address">Адрес организации</string>
     <string name="field_organization_address_placeholder">Введите адрес организации</string>
     <string name="field_date">Дата</string>
+    <string name="field_acceptance_date">Дата приема</string>
     <string name="field_date_placeholder">Например, 23.03.2026</string>
     <string name="field_customer">Заказчик</string>
     <string name="field_customer_placeholder">Введите наименование заказчика</string>
@@ -48,6 +49,8 @@
     <string name="field_customer_representative_phone_placeholder">Введите телефон представителя заказчика</string>
     <string name="field_customer_address">Адрес заказчика</string>
     <string name="field_customer_address_placeholder">Укажите полный адрес</string>
+    <string name="field_compilation_place">Место составления</string>
+    <string name="field_compilation_place_placeholder">Укажите место составления</string>
     <string name="field_transfer_place">Место передачи имущества</string>
     <string name="field_transfer_place_placeholder">Укажите место передачи имущества</string>
     <string name="field_equipment_transfer_state">Оборудование передается в</string>

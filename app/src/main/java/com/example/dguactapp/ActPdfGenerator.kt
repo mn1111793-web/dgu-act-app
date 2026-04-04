@@ -218,9 +218,7 @@ object ActPdfGenerator {
             drawKeyValue("ОГРН", act.organizationOgrn)
             drawKeyValue("Адрес организации", act.organizationAddress)
             drawKeyValue("Телефон организации", act.organizationPhone)
-            drawSection("Представитель заказчика")
-            drawKeyValue("Представитель заказчика", act.customerRepresentative)
-            drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
+            drawCustomerRepresentativeBlock()
             y += 2f
             drawSection("2. Сведения об оборудовании")
             drawKeyValue("Код оборудования", act.equipmentCode)
@@ -234,6 +232,12 @@ object ActPdfGenerator {
                 drawKeyValue("Внешнее состояние", act.externalCondition, blankLines = 2)
                 drawKeyValue("Описание неисправности", act.malfunctionDescription, blankLines = 3)
             }
+        }
+
+        fun drawCustomerRepresentativeBlock() {
+            drawSection("Представитель заказчика")
+            drawKeyValue("Представитель заказчика", act.customerRepresentative)
+            drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
         }
 
         fun drawAcceptanceEquipmentTable() {
@@ -357,8 +361,7 @@ object ActPdfGenerator {
                 drawKeyValue("ОГРН", act.organizationOgrn)
                 drawKeyValue("Адрес организации", act.organizationAddress)
                 drawKeyValue("Телефон организации", act.organizationPhone)
-                drawKeyValue("Представитель заказчика", act.customerRepresentative)
-                drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
+                drawCustomerRepresentativeBlock()
                 drawKeyValue("Место передачи имущества", act.compilationPlace)
                 drawSection("3. Оборудование")
                 drawAcceptanceEquipmentTable()

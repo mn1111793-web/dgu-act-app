@@ -2008,6 +2008,11 @@ fun RequestDetailsScreen(
                     InfoLine(stringResource(id = R.string.field_organization_ogrn), request.organizationOgrn)
                     InfoLine(stringResource(id = R.string.field_organization_address), request.organizationAddress)
                     InfoLine(stringResource(id = R.string.field_organization_phone), request.organizationPhone)
+                    Text(
+                        text = stringResource(id = R.string.customer_representative_block_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     InfoLine(stringResource(id = R.string.field_customer_representative), request.customerRepresentative)
                     InfoLine(
                         stringResource(id = R.string.field_customer_representative_phone),

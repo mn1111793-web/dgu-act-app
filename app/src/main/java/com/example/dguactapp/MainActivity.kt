@@ -99,8 +99,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.dguactapp.ui.theme.DguActAppTheme
-import com.tom_roush.pdfbox.pdmodel.PDDocument
-import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.BufferedInputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -3055,20 +3053,13 @@ private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): 
 
     return runCatching {
         when {
-            isPdf -> readPdfText(context, uri)
+            isPdf -> null
             isDocx -> readDocxText(context, uri)
             else -> null
         }
     }.getOrNull()
 }
 
-private fun readPdfText(context: android.content.Context, uri: Uri): String {
-    return context.contentResolver.openInputStream(uri)?.use { input ->
-        PDDocument.load(input).use { document ->
-            PDFTextStripper().getText(document)
-        }
-    }.orEmpty()
-}
 
 private fun readDocxText(context: android.content.Context, uri: Uri): String {
     return context.contentResolver.openInputStream(uri)?.use { input ->

@@ -101,7 +101,6 @@ import coil.compose.AsyncImage
 import com.example.dguactapp.ui.theme.DguActAppTheme
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
-import java.io.BufferedInputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -662,7 +661,11 @@ fun NewActScreen(
                 enterpriseCardDetectedOgrn = extracted.organizationOgrn
                 enterpriseCardDetectedAddress = extracted.organizationAddress
                 enterpriseCardDetectedPhone = extracted.organizationPhone
-                showEnterpriseCardDetectedDialog = true
+                organizationName = extracted.organizationName
+                organizationInn = extracted.organizationInn
+                organizationOgrn = extracted.organizationOgrn
+                organizationAddress = extracted.organizationAddress
+                organizationPhone = extracted.organizationPhone
             }
         }
     }
@@ -3138,22 +3141,25 @@ private fun String.normalizeExtractedField(): String = trim()
 private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): String? {
     val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
     val fileName = resolveFileName(context, uri).lowercase(Locale.ROOT)
-    val isPdf = mimeType == "application/pdf" || fileName.endsWith(".pdf")
-
-    return runCatching {
-        when {
-            isPdf -> readPdfText(context, uri)
-            else -> null
-        }
-    }.getOrNull()
+    val isPdf = mimeType.contains("pdf") || fileName.endsWith(".pdf") || mimeType.isBlank()
+    if (!isPdf) return null
+    return runCatching { readPdfText(context, uri) }.getOrNull()
 }
 
 private fun readPdfText(context: android.content.Context, uri: Uri): String {
-    return context.contentResolver.openInputStream(uri)?.use { input ->
-        PDDocument.load(BufferedInputStream(input)).use { document ->
+    val tempFile = kotlin.runCatching {
+        java.io.File.createTempFile("enterprise_card_", ".pdf", context.cacheDir)
+    }.getOrNull() ?: return ""
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            tempFile.outputStream().use { output -> input.copyTo(output) }
+        } ?: return ""
+        PDDocument.load(tempFile).use { document ->
             PDFTextStripper().getText(document)
         }
-    }.orEmpty()
+    } finally {
+        tempFile.delete()
+    }
 }
 
 @Preview(showBackground = true, showSystemUi = true)

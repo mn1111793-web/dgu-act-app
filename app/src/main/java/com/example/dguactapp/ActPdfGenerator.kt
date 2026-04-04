@@ -212,12 +212,6 @@ object ActPdfGenerator {
             drawKeyValue("Дата создания", act.createdAt)
             drawKeyValue("Место составления", act.compilationPlace)
             drawKeyValue("Адрес организации", act.organizationAddress)
-            if (documentType != DocumentType.TransferAcceptanceAct) {
-                drawKeyValue(
-                    "Адрес заказчика",
-                    act.customerAddress
-                )
-            }
             drawSection("Исполнитель")
             drawKeyValue("Реквизиты", executorRequisites, blankLines = 3)
             drawSection("Заказчик")
@@ -230,11 +224,11 @@ object ActPdfGenerator {
                 drawKeyValue("Представитель заказчика", act.customerRepresentative)
                 drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
             } else {
-                drawKeyValue(
-                    if (documentType == DocumentType.DiagnosticAct) "Телефон организации" else "Телефон",
-                    act.organizationPhone.ifBlank { act.phone }
-                )
-                drawKeyValue("Заказчик", act.customer)
+                drawKeyValue("Наименование организации", act.organizationName)
+                drawKeyValue("ИНН", act.organizationInn)
+                drawKeyValue("ОГРН", act.organizationOgrn)
+                drawKeyValue("Адрес организации", act.organizationAddress)
+                drawKeyValue("Телефон организации", act.organizationPhone.ifBlank { act.phone })
                 if (documentType != DocumentType.DiagnosticAct) {
                     drawKeyValue("Представитель заказчика", act.customerRepresentative)
                     drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)

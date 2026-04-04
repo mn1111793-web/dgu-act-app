@@ -116,9 +116,9 @@ private enum class AppScreen {
 }
 
 private enum class EquipmentTransferState(val value: String) {
-    Working("рабочем состоянии"),
-    NotWorking("нерабочем состоянии"),
-    PartiallyWorking("частично рабочем состоянии");
+    Working("в рабочем состоянии"),
+    NotWorking("в нерабочем состоянии"),
+    PartiallyWorking("частично в рабочем состоянии");
 
     companion object {
         fun fromValue(value: String): EquipmentTransferState =

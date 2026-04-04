@@ -99,12 +99,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.dguactapp.ui.theme.DguActAppTheme
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.BufferedInputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.zip.ZipInputStream
 import kotlinx.coroutines.launch
 
 private enum class AppScreen {
@@ -125,9 +126,6 @@ private enum class EquipmentTransferState(val value: String) {
             values().firstOrNull { it.value == value } ?: Working
     }
 }
-
-private const val EXECUTOR_REQUISITES =
-    "Индивидуальный предприниматель Малышева Наталья Александровна, ЯНАО, г. Новый Уренгой, проспект Губкина, 21 б, кв. 52, ИНН 890411627911, ОГРНИП 318890100008958, \"ДГУ Ямал\"."
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -481,7 +479,10 @@ fun NewActScreen(
     }
     var enterpriseCardFileName by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var enterpriseCardDetectedName by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var enterpriseCardDetectedInn by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var enterpriseCardDetectedOgrn by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var enterpriseCardDetectedAddress by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var enterpriseCardDetectedPhone by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var showEnterpriseCardDetectedDialog by rememberSaveable(existingAct?.id) { mutableStateOf(false) }
     var brandSelection by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
@@ -657,7 +658,10 @@ fun NewActScreen(
             val extracted = extractEnterpriseCardData(context, uri)
             if (extracted != null) {
                 enterpriseCardDetectedName = extracted.organizationName
+                enterpriseCardDetectedInn = extracted.organizationInn
+                enterpriseCardDetectedOgrn = extracted.organizationOgrn
                 enterpriseCardDetectedAddress = extracted.organizationAddress
+                enterpriseCardDetectedPhone = extracted.organizationPhone
                 showEnterpriseCardDetectedDialog = true
             }
         }
@@ -920,8 +924,7 @@ fun NewActScreen(
                             onClick = {
                                 enterpriseCardLauncher.launch(
                                     arrayOf(
-                                        "application/pdf",
-                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                        "application/pdf"
                                     )
                                 )
                             },
@@ -1749,13 +1752,34 @@ fun NewActScreen(
                         placeholder = stringResource(id = R.string.field_organization_address_placeholder),
                         minLines = 2
                     )
+                    FormTextField(
+                        value = enterpriseCardDetectedInn,
+                        onValueChange = { enterpriseCardDetectedInn = it },
+                        label = stringResource(id = R.string.field_organization_inn),
+                        placeholder = stringResource(id = R.string.field_organization_inn_placeholder)
+                    )
+                    FormTextField(
+                        value = enterpriseCardDetectedOgrn,
+                        onValueChange = { enterpriseCardDetectedOgrn = it },
+                        label = stringResource(id = R.string.field_organization_ogrn),
+                        placeholder = stringResource(id = R.string.field_organization_ogrn_placeholder)
+                    )
+                    FormTextField(
+                        value = enterpriseCardDetectedPhone,
+                        onValueChange = { enterpriseCardDetectedPhone = it },
+                        label = stringResource(id = R.string.field_organization_phone),
+                        placeholder = "+7 ..."
+                    )
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        organizationName = enterpriseCardDetectedName.ifBlank { EXECUTOR_REQUISITES }
+                        organizationName = enterpriseCardDetectedName
+                        organizationInn = enterpriseCardDetectedInn
+                        organizationOgrn = enterpriseCardDetectedOgrn
                         organizationAddress = enterpriseCardDetectedAddress
+                        organizationPhone = enterpriseCardDetectedPhone
                         showEnterpriseCardDetectedDialog = false
                     }
                 ) {
@@ -3022,7 +3046,10 @@ private fun resolveFileName(context: android.content.Context, uri: Uri): String 
 
 private data class EnterpriseCardExtract(
     val organizationName: String,
-    val organizationAddress: String
+    val organizationInn: String,
+    val organizationOgrn: String,
+    val organizationAddress: String,
+    val organizationPhone: String
 )
 
 private fun extractEnterpriseCardData(
@@ -3041,6 +3068,16 @@ private fun extractEnterpriseCardData(
     val name = lines.firstOrNull {
         it.contains(Regex("""\b(ООО|ОАО|ЗАО|АО|ПАО|ИП)\b""", RegexOption.IGNORE_CASE))
     }.orEmpty()
+    val inn = Regex("""\bИНН\b\D*(\d{10}|\d{12})""", RegexOption.IGNORE_CASE)
+        .find(text)
+        ?.groupValues
+        ?.getOrNull(1)
+        .orEmpty()
+    val ogrn = Regex("""\bОГРН(?:ИП)?\b\D*(\d{13}|\d{15})""", RegexOption.IGNORE_CASE)
+        .find(text)
+        ?.groupValues
+        ?.getOrNull(1)
+        .orEmpty()
     val address = lines.firstOrNull {
         it.contains("адрес", ignoreCase = true)
     }?.substringAfter(":", "").orEmpty().ifBlank {
@@ -3048,11 +3085,24 @@ private fun extractEnterpriseCardData(
             it.contains(Regex("""\b(г\.|город|ул\.|улица|проспект|пр-т|д\.)\b""", RegexOption.IGNORE_CASE))
         }.orEmpty()
     }
+    val phone = lines.firstOrNull {
+        it.contains(Regex("""\b(телефон|тел\.?|контакт)\b""", RegexOption.IGNORE_CASE))
+    }?.let { line ->
+        Regex("""(\+?7|8)[\d\-\s\(\)]{9,}""").find(line)?.value.orEmpty()
+    }.orEmpty().ifBlank {
+        Regex("""(?<!\d)(\+?7|8)[\d\-\s\(\)]{9,}(?!\d)""")
+            .find(text)
+            ?.value
+            .orEmpty()
+    }
 
-    if (name.isBlank() && address.isBlank()) return null
+    if (name.isBlank() && inn.isBlank() && ogrn.isBlank() && address.isBlank() && phone.isBlank()) return null
     return EnterpriseCardExtract(
         organizationName = name,
-        organizationAddress = address
+        organizationInn = inn,
+        organizationOgrn = ogrn,
+        organizationAddress = address,
+        organizationPhone = phone
     )
 }
 
@@ -3060,31 +3110,19 @@ private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): 
     val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
     val fileName = resolveFileName(context, uri).lowercase(Locale.ROOT)
     val isPdf = mimeType == "application/pdf" || fileName.endsWith(".pdf")
-    val isDocx = mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-        fileName.endsWith(".docx")
 
     return runCatching {
         when {
-            isPdf -> null
-            isDocx -> readDocxText(context, uri)
+            isPdf -> readPdfText(context, uri)
             else -> null
         }
     }.getOrNull()
 }
 
-
-private fun readDocxText(context: android.content.Context, uri: Uri): String {
+private fun readPdfText(context: android.content.Context, uri: Uri): String {
     return context.contentResolver.openInputStream(uri)?.use { input ->
-        ZipInputStream(BufferedInputStream(input)).use { zip ->
-            generateSequence { zip.nextEntry }.firstOrNull { it.name == "word/document.xml" }
-                ?: return@use ""
-            val xml = zip.readBytes().toString(Charsets.UTF_8)
-            xml
-                .replace("</w:p>", "\n")
-                .replace(Regex("<[^>]+>"), " ")
-                .replace(Regex("[\\t\\x0B\\f\\r ]+"), " ")
-                .replace(Regex("\\n+"), "\n")
-                .trim()
+        PDDocument.load(BufferedInputStream(input)).use { document ->
+            PDFTextStripper().getText(document)
         }
     }.orEmpty()
 }

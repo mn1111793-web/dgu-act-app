@@ -63,7 +63,8 @@ object DiagnosticChecklistCatalog {
                 ChecklistItemDefinition("advanced_disassembly", "Вскрытие"),
                 ChecklistItemDefinition("advanced_internal_nodes", "Состояние внутренних узлов"),
                 ChecklistItemDefinition("advanced_electrical_measurements", "Электрические измерения"),
-                ChecklistItemDefinition("advanced_mechanical_wear", "Механические зазоры / износ")
+                ChecklistItemDefinition("advanced_mechanical_wear", "Механические зазоры / износ"),
+                ChecklistItemDefinition("advanced_warm_start", "Запуск после прогрева")
             )
         )
     )

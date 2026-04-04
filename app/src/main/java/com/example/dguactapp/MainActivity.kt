@@ -2156,12 +2156,21 @@ fun ActDetailsScreen(
                 content = {
                     InfoLine(stringResource(id = R.string.field_request_number), act.requestNumber)
                     InfoLine(stringResource(id = R.string.field_created_at), act.createdAt)
-                    InfoLine(stringResource(id = R.string.field_date), act.date)
                     InfoLine(stringResource(id = R.string.field_document_type), act.documentType.title)
                     InfoLine(stringResource(id = R.string.field_status), act.resolvedStatus().title)
-                    InfoLine(stringResource(id = R.string.field_customer), act.customer)
-                    InfoLine(stringResource(id = R.string.field_phone), act.phone)
-                    InfoLine(stringResource(id = R.string.field_customer_address), act.customerAddress)
+                    Text(
+                        text = stringResource(id = R.string.organization_details_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    InfoLine(stringResource(id = R.string.field_organization_name), act.organizationName)
+                    InfoLine(stringResource(id = R.string.field_organization_inn), act.organizationInn)
+                    InfoLine(stringResource(id = R.string.field_organization_ogrn), act.organizationOgrn)
+                    InfoLine(stringResource(id = R.string.field_organization_address), act.organizationAddress)
+                    InfoLine(
+                        stringResource(id = R.string.field_organization_phone),
+                        act.organizationPhone.ifBlank { act.phone }
+                    )
                 }
             )
             DetailCard(

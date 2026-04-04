@@ -207,32 +207,24 @@ object ActPdfGenerator {
         }
 
         fun drawBaseInfoSections(documentType: DocumentType) {
-            drawSection("Дата и место")
+            drawSection("Основные сведения")
             drawKeyValue("Номер заявки", act.requestNumber)
             drawKeyValue("Дата создания", act.createdAt)
-            drawKeyValue("Место составления", act.compilationPlace)
-            drawKeyValue("Адрес организации", act.organizationAddress)
             drawSection("Исполнитель")
             drawKeyValue("Реквизиты", executorRequisites, blankLines = 3)
-            drawSection("Заказчик")
+            drawSection("Реквизиты организации")
             if (documentType == DocumentType.TransferAcceptanceAct) {
                 drawKeyValue("Наименование организации", act.organizationName)
                 drawKeyValue("ИНН", act.organizationInn)
                 drawKeyValue("ОГРН", act.organizationOgrn)
                 drawKeyValue("Адрес организации", act.organizationAddress)
                 drawKeyValue("Телефон организации", act.organizationPhone.ifBlank { act.phone })
-                drawKeyValue("Представитель заказчика", act.customerRepresentative)
-                drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
             } else {
                 drawKeyValue("Наименование организации", act.organizationName)
                 drawKeyValue("ИНН", act.organizationInn)
                 drawKeyValue("ОГРН", act.organizationOgrn)
                 drawKeyValue("Адрес организации", act.organizationAddress)
                 drawKeyValue("Телефон организации", act.organizationPhone.ifBlank { act.phone })
-                if (documentType != DocumentType.DiagnosticAct) {
-                    drawKeyValue("Представитель заказчика", act.customerRepresentative)
-                    drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
-                }
             }
             y += 2f
             drawSection("2. Сведения об оборудовании")

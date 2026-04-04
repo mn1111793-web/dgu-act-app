@@ -218,7 +218,9 @@ object ActPdfGenerator {
             drawKeyValue("ОГРН", act.organizationOgrn)
             drawKeyValue("Адрес организации", act.organizationAddress)
             drawKeyValue("Телефон организации", act.organizationPhone)
-            drawCustomerRepresentativeBlock()
+            drawSection("Представитель заказчика")
+            drawKeyValue("Представитель заказчика", act.customerRepresentative)
+            drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
             y += 2f
             drawSection("2. Сведения об оборудовании")
             drawKeyValue("Код оборудования", act.equipmentCode)
@@ -361,7 +363,10 @@ object ActPdfGenerator {
                 drawKeyValue("ОГРН", act.organizationOgrn)
                 drawKeyValue("Адрес организации", act.organizationAddress)
                 drawKeyValue("Телефон организации", act.organizationPhone)
-                drawCustomerRepresentativeBlock()
+                drawSection("Представитель заказчика")
+                drawKeyValue("Представитель заказчика", act.customerRepresentative)
+                drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
+                y += 2f
                 drawKeyValue("Место передачи имущества", act.compilationPlace)
                 drawSection("3. Оборудование")
                 drawAcceptanceEquipmentTable()

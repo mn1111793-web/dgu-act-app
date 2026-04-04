@@ -249,8 +249,8 @@ object ActPdfGenerator {
             val rowHeight = 34f
             val tableTop = y + 4f
             val width = tableRight - tableLeft
-            val col1 = tableLeft + width * 0.62f
-            val col2 = tableLeft + width * 0.78f
+            val col1 = tableLeft + width * 0.58f
+            val col2 = tableLeft + width * 0.70f
             val tableBottom = tableTop + headerHeight + rowHeight
 
             ensureSpace(headerHeight + rowHeight + 18f)
@@ -285,7 +285,7 @@ object ActPdfGenerator {
                 bodyPaint
             )
             canvas.drawText(
-                act.equipmentTransferState.ifBlank { "Не заполнено" }.take(20),
+                act.equipmentTransferState.ifBlank { "Не заполнено" },
                 col2 + 6f,
                 tableTop + headerHeight + 20f,
                 bodyPaint

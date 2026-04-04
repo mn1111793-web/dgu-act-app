@@ -2153,6 +2153,11 @@ fun ActDetailsScreen(
                     InfoLine(stringResource(id = R.string.field_organization_ogrn), act.organizationOgrn)
                     InfoLine(stringResource(id = R.string.field_organization_address), act.organizationAddress)
                     InfoLine(stringResource(id = R.string.field_organization_phone), act.organizationPhone)
+                    Text(
+                        text = stringResource(id = R.string.customer_representative_block_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     InfoLine(stringResource(id = R.string.field_customer_representative), act.customerRepresentative)
                     InfoLine(
                         stringResource(id = R.string.field_customer_representative_phone),

@@ -249,8 +249,8 @@ object ActPdfGenerator {
             val rowHeight = 34f
             val tableTop = y + 4f
             val width = tableRight - tableLeft
-            val col1 = tableLeft + width * 0.1f
-            val col2 = tableLeft + width * 0.72f
+            val col1 = tableLeft + width * 0.62f
+            val col2 = tableLeft + width * 0.78f
             val tableBottom = tableTop + headerHeight + rowHeight
 
             ensureSpace(headerHeight + rowHeight + 18f)
@@ -259,9 +259,9 @@ object ActPdfGenerator {
             canvas.drawLine(col1, tableTop, col1, tableBottom, linePaint)
             canvas.drawLine(col2, tableTop, col2, tableBottom, linePaint)
 
-            canvas.drawText("№", tableLeft + 6f, tableTop + 15f, smallPaint)
-            canvas.drawText("Наименование оборудования", col1 + 6f, tableTop + 15f, smallPaint)
-            canvas.drawText("Серийный номер", col2 + 6f, tableTop + 15f, smallPaint)
+            canvas.drawText("Наименование и серийный номер", tableLeft + 6f, tableTop + 15f, smallPaint)
+            canvas.drawText("Количество", col1 + 6f, tableTop + 15f, smallPaint)
+            canvas.drawText("Состояние", col2 + 6f, tableTop + 15f, smallPaint)
 
             val equipmentDescription = buildString {
                 append(act.equipmentName.ifBlank { "Не заполнено" })
@@ -272,15 +272,20 @@ object ActPdfGenerator {
                     append(")")
                 }
             }
-            canvas.drawText("1", tableLeft + 6f, tableTop + headerHeight + 20f, bodyPaint)
             canvas.drawText(
-                equipmentDescription.take(55),
+                "$equipmentDescription, S/N: ${act.serialNumber.ifBlank { "Не заполнено" }}".take(62),
+                tableLeft + 6f,
+                tableTop + headerHeight + 20f,
+                bodyPaint
+            )
+            canvas.drawText(
+                "1",
                 col1 + 6f,
                 tableTop + headerHeight + 20f,
                 bodyPaint
             )
             canvas.drawText(
-                act.serialNumber.ifBlank { "Не заполнено" }.take(22),
+                act.equipmentTransferState.ifBlank { "Не заполнено" }.take(20),
                 col2 + 6f,
                 tableTop + headerHeight + 20f,
                 bodyPaint
@@ -356,16 +361,6 @@ object ActPdfGenerator {
             DocumentType.AcceptanceAct -> {
                 drawSection("1. Предмет акта")
                 drawParagraph("1.1. Исполнитель передаёт, а Заказчик принимает оборудование после выполненного ремонта.")
-                drawSection("2. Данные сторон")
-                drawKeyValue("Исполнитель", "Исполнитель")
-                drawKeyValue("Наименование организации", act.organizationName)
-                drawKeyValue("ИНН", act.organizationInn)
-                drawKeyValue("ОГРН", act.organizationOgrn)
-                drawKeyValue("Адрес организации", act.organizationAddress)
-                drawKeyValue("Телефон организации", act.organizationPhone)
-                drawSection("Представитель заказчика")
-                drawKeyValue("Представитель заказчика", act.customerRepresentative)
-                drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
                 y += 2f
                 drawKeyValue("Место передачи имущества", act.compilationPlace)
                 drawSection("3. Оборудование")

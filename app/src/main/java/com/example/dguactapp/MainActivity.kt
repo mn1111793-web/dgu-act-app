@@ -99,6 +99,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.dguactapp.ui.theme.DguActAppTheme
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.text.SimpleDateFormat
@@ -3147,6 +3148,7 @@ private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): 
 }
 
 private fun readPdfText(context: android.content.Context, uri: Uri): String {
+    PDFBoxResourceLoader.init(context.applicationContext)
     val tempFile = kotlin.runCatching {
         java.io.File.createTempFile("enterprise_card_", ".pdf", context.cacheDir)
     }.getOrNull() ?: return ""

@@ -36,6 +36,7 @@
     <string name="field_organization_name_placeholder">Подставляется автоматически</string>
     <string name="field_organization_address">Адрес организации</string>
     <string name="field_organization_address_placeholder">Введите адрес организации</string>
+    <string name="field_organization_phone">Телефон организации</string>
     <string name="field_date">Дата</string>
     <string name="field_acceptance_date">Дата приема</string>
     <string name="field_date_placeholder">Например, 23.03.2026</string>

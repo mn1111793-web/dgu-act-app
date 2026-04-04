@@ -3065,35 +3065,52 @@ private fun extractEnterpriseCardData(
         .toList()
     if (lines.isEmpty()) return null
 
-    val name = lines.firstOrNull {
-        it.contains(Regex("""\b(ООО|ОАО|ЗАО|АО|ПАО|ИП)\b""", RegexOption.IGNORE_CASE))
-    }.orEmpty()
+    val flattenedText = lines.joinToString(" ") { it }
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+
+    val organizationLabelPrefix = """(?:организац(?:ия|ии)|компан(?:ия|ии)|предприят(?:ие|ия))\s*"""
+    val legalFormPrefix = """(?:ООО|ОАО|ЗАО|АО|ПАО|ИП)\s*"""
+    val name = (
+        Regex(
+            """$organizationLabelPrefix(?:[:\-]\s*)?(\"[^\"]+\"|«[^»]+»|[^,\n;]+)""",
+            RegexOption.IGNORE_CASE
+        ).find(flattenedText)?.groupValues?.getOrNull(1)?.orEmpty()
+            ?: Regex(
+                """$legalFormPrefix(?:\"[^\"]+\"|«[^»]+»|[A-Za-zА-Яа-я0-9\.\- ]{2,})""",
+                RegexOption.IGNORE_CASE
+            ).find(flattenedText)?.value.orEmpty()
+        ).normalizeExtractedField()
+
     val inn = Regex("""\bИНН\b\D*(\d{10}|\d{12})""", RegexOption.IGNORE_CASE)
-        .find(text)
+        .find(flattenedText)
         ?.groupValues
         ?.getOrNull(1)
         .orEmpty()
     val ogrn = Regex("""\bОГРН(?:ИП)?\b\D*(\d{13}|\d{15})""", RegexOption.IGNORE_CASE)
-        .find(text)
+        .find(flattenedText)
         ?.groupValues
         ?.getOrNull(1)
         .orEmpty()
-    val address = lines.firstOrNull {
-        it.contains("адрес", ignoreCase = true)
-    }?.substringAfter(":", "").orEmpty().ifBlank {
-        lines.firstOrNull {
-            it.contains(Regex("""\b(г\.|город|ул\.|улица|проспект|пр-т|д\.)\b""", RegexOption.IGNORE_CASE))
-        }.orEmpty()
-    }
-    val phone = lines.firstOrNull {
-        it.contains(Regex("""\b(телефон|тел\.?|контакт)\b""", RegexOption.IGNORE_CASE))
-    }?.let { line ->
-        Regex("""(\+?7|8)[\d\-\s\(\)]{9,}""").find(line)?.value.orEmpty()
-    }.orEmpty().ifBlank {
+    val address = extractFieldByLabel(
+        text = flattenedText,
+        labelRegex = """(?:юридическ(?:ий|ого)\s+адрес|адрес\s+организац(?:ии|ия)|адрес)"""
+    ).ifBlank {
+        Regex(
+            """\b(индекс\s*\d{6}|\d{6})\b[^;\n]*?(?:г\.|город|ул\.|улица|проспект|пр-т|д\.|дом|помещ\.?)""",
+            RegexOption.IGNORE_CASE
+        ).find(flattenedText)?.value.orEmpty()
+    }.normalizeExtractedField()
+
+    val phone = extractFieldByLabel(
+        text = flattenedText,
+        labelRegex = """(?:телефон\s+организац(?:ии|ия)|контактн(?:ый|ого)\s+телефон|телефон|тел\.?)"""
+    ).let { extractedPhoneBlock ->
         Regex("""(?<!\d)(\+?7|8)[\d\-\s\(\)]{9,}(?!\d)""")
-            .find(text)
+            .find(extractedPhoneBlock.ifBlank { flattenedText })
             ?.value
             .orEmpty()
+            .normalizeExtractedField()
     }
 
     if (name.isBlank() && inn.isBlank() && ogrn.isBlank() && address.isBlank() && phone.isBlank()) return null
@@ -3105,6 +3122,18 @@ private fun extractEnterpriseCardData(
         organizationPhone = phone
     )
 }
+
+private fun extractFieldByLabel(text: String, labelRegex: String): String {
+    val valuePattern = Regex(
+        """(?:$labelRegex)\s*(?:[:\-]\s*|\s+)(.+?)(?=(?:,?\s*(?:ИНН|ОГРН(?:ИП)?|(?:юридическ(?:ий|ого)\s+)?адрес|телефон|тел\.?|контактн(?:ый|ого)\s+телефон)\b)|$)""",
+        RegexOption.IGNORE_CASE
+    )
+    return valuePattern.find(text)?.groupValues?.getOrNull(1).orEmpty().normalizeExtractedField()
+}
+
+private fun String.normalizeExtractedField(): String = trim()
+    .trim(',', ';', '.')
+    .replace(Regex("""\s+"""), " ")
 
 private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): String? {
     val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)

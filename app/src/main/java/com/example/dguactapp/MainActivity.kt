@@ -1189,7 +1189,7 @@ fun NewActScreen(
                             label = stringResource(id = R.string.field_date),
                             placeholder = stringResource(id = R.string.field_date_placeholder)
                         )
-                        if (!isDiagnosticDocument) {
+                        if (!isDiagnosticDocument && !isAcceptanceDocument) {
                             FormTextField(
                                 value = customer,
                                 onValueChange = { customer = it },
@@ -1274,10 +1274,12 @@ fun NewActScreen(
                             )
                             FormTextField(
                                 value = resolvedModel,
-                                onValueChange = {},
+                                onValueChange = {
+                                    modelSelection = EquipmentCatalog.OTHER_OPTION
+                                    customModel = it
+                                },
                                 label = stringResource(id = R.string.field_model),
-                                placeholder = stringResource(id = R.string.field_model_placeholder),
-                                readOnly = true
+                                placeholder = stringResource(id = R.string.field_model_placeholder)
                             )
                         } else {
                             DropdownField(
@@ -1327,7 +1329,7 @@ fun NewActScreen(
                             label = stringResource(id = R.string.field_serial_number),
                             placeholder = stringResource(id = R.string.field_serial_number_placeholder)
                         )
-                        if (!isAcceptanceDocument) {
+                        if (!isDiagnosticDocument) {
                             FormTextField(
                                 value = operatingTime,
                                 onValueChange = { operatingTime = it },

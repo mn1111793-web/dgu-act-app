@@ -62,9 +62,9 @@
     <string name="field_transfer_place">Место передачи имущества</string>
     <string name="field_transfer_place_placeholder">Укажите место передачи имущества</string>
     <string name="field_equipment_transfer_state">Оборудование передается в</string>
-    <string name="equipment_state_working">рабочем состоянии</string>
-    <string name="equipment_state_not_working">нерабочем состоянии</string>
-    <string name="equipment_state_partially_working">частично рабочем состоянии</string>
+    <string name="equipment_state_working">в рабочем состоянии</string>
+    <string name="equipment_state_not_working">в нерабочем состоянии</string>
+    <string name="equipment_state_partially_working">частично в рабочем состоянии</string>
     <string name="acceptance_note_no_claims">Заказчик претензий не имеет к состоянию и внешнему виду оборудования.</string>
     <string name="acceptance_note_work_warranty">Гарантия на произведенные работы составляет 14 дней, либо до момента погрузки оборудования.</string>
     <string name="acceptance_note_parts_warranty">Гарантия на запасные части — согласно документации производителя.</string>

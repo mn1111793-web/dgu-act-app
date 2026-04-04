@@ -476,12 +476,6 @@ fun NewActScreen(
     var compilationPlace by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.compilationPlace ?: existingRequest?.compilationPlace.orEmpty())
     }
-    var manualCustomerRepresentative by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingRequest?.customerRepresentative.orEmpty())
-    }
-    var manualCustomerRepresentativePhone by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingRequest?.customerRepresentativePhone.orEmpty())
-    }
     var enterpriseCardUri by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingRequest?.enterpriseCardUri.orEmpty())
     }
@@ -505,11 +499,9 @@ fun NewActScreen(
     }
     var customerRepresentative by rememberSaveable(existingAct?.id) {
         mutableStateOf(
-            if (existingAct?.documentType == DocumentType.DiagnosticAct) "" else {
-                existingAct?.customerRepresentative
-                    ?.ifBlank { existingRequest?.customerRepresentative.orEmpty() }
-                    .orEmpty()
-            }
+            existingAct?.customerRepresentative
+                ?.ifBlank { existingRequest?.customerRepresentative.orEmpty() }
+                .orEmpty()
         )
     }
     var customerRepresentativePhone by rememberSaveable(existingAct?.id) {
@@ -1010,6 +1002,18 @@ fun NewActScreen(
                     }
                     if (!isTransferAcceptanceDocument && !isAcceptanceDocument) {
                         FormTextField(
+                            value = organizationInn,
+                            onValueChange = { organizationInn = it },
+                            label = stringResource(id = R.string.field_organization_inn),
+                            placeholder = stringResource(id = R.string.field_organization_inn_placeholder)
+                        )
+                        FormTextField(
+                            value = organizationOgrn,
+                            onValueChange = { organizationOgrn = it },
+                            label = stringResource(id = R.string.field_organization_ogrn),
+                            placeholder = stringResource(id = R.string.field_organization_ogrn_placeholder)
+                        )
+                        FormTextField(
                             value = organizationAddress,
                             onValueChange = { organizationAddress = it },
                             label = stringResource(id = R.string.field_organization_address),
@@ -1017,16 +1021,10 @@ fun NewActScreen(
                             minLines = 2
                         )
                         FormTextField(
-                            value = manualCustomerRepresentative,
-                            onValueChange = { manualCustomerRepresentative = it },
-                            label = stringResource(id = R.string.field_customer_representative),
-                            placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
-                        )
-                        FormTextField(
-                            value = manualCustomerRepresentativePhone,
-                            onValueChange = { manualCustomerRepresentativePhone = it },
-                            label = stringResource(id = R.string.field_customer_representative_phone),
-                            placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
+                            value = organizationPhone,
+                            onValueChange = { organizationPhone = it },
+                            label = stringResource(id = R.string.field_organization_phone),
+                            placeholder = stringResource(id = R.string.field_phone_placeholder),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                         )
                     }
@@ -1077,7 +1075,7 @@ fun NewActScreen(
                             FormTextField(
                                 value = organizationPhone,
                                 onValueChange = { organizationPhone = it },
-                                label = stringResource(id = R.string.field_phone),
+                                label = stringResource(id = R.string.field_organization_phone),
                                 placeholder = stringResource(id = R.string.field_phone_placeholder),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                             )
@@ -1199,33 +1197,17 @@ fun NewActScreen(
                                 placeholder = stringResource(id = R.string.field_customer_placeholder)
                             )
                         }
-                        if (!isDiagnosticDocument) {
-                            FormTextField(
-                                value = customerRepresentative,
-                                onValueChange = { customerRepresentative = it },
-                                label = stringResource(id = R.string.field_customer_representative),
-                                placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
-                            )
-                        }
                         FormTextField(
-                            value = if (isDiagnosticDocument) phone else customerRepresentativePhone,
-                            onValueChange = {
-                                if (isDiagnosticDocument) {
-                                    phone = it
-                                } else {
-                                    customerRepresentativePhone = it
-                                }
-                            },
-                            label = if (isDiagnosticDocument) {
-                                stringResource(id = R.string.field_phone)
-                            } else {
-                                stringResource(id = R.string.field_customer_representative_phone)
-                            },
-                            placeholder = if (isDiagnosticDocument) {
-                                stringResource(id = R.string.field_phone_placeholder)
-                            } else {
-                                stringResource(id = R.string.field_customer_representative_phone_placeholder)
-                            },
+                            value = customerRepresentative,
+                            onValueChange = { customerRepresentative = it },
+                            label = stringResource(id = R.string.field_customer_representative),
+                            placeholder = stringResource(id = R.string.field_customer_representative_placeholder)
+                        )
+                        FormTextField(
+                            value = customerRepresentativePhone,
+                            onValueChange = { customerRepresentativePhone = it },
+                            label = stringResource(id = R.string.field_customer_representative_phone),
+                            placeholder = stringResource(id = R.string.field_customer_representative_phone_placeholder),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                         )
                         if (!isDiagnosticDocument) {
@@ -1638,16 +1620,8 @@ fun NewActScreen(
                             organizationOgrn = organizationOgrn,
                             organizationAddress = organizationAddress,
                             organizationPhone = organizationPhone,
-                            customerRepresentative = if (isTransferAcceptanceDocument || isAcceptanceDocument) {
-                                customerRepresentative
-                            } else {
-                                manualCustomerRepresentative
-                            },
-                            customerRepresentativePhone = if (isTransferAcceptanceDocument || isAcceptanceDocument) {
-                                customerRepresentativePhone
-                            } else {
-                                manualCustomerRepresentativePhone
-                            },
+                            customerRepresentative = customerRepresentative,
+                            customerRepresentativePhone = customerRepresentativePhone,
                             compilationPlace = compilationPlace,
                             enterpriseCardUri = enterpriseCardUri,
                             equipmentCode = equipmentCode,
@@ -1665,7 +1639,7 @@ fun NewActScreen(
                             requestNumber = requestRecord.requestNumber,
                             date = requestRecord.date,
                             customer = requestRecord.customer,
-                            phone = if (isTransferAcceptanceDocument) organizationPhone else phone,
+                            phone = phone,
                             customerAddress = customerAddress,
                             organizationName = organizationName,
                             organizationInn = organizationInn,
@@ -2024,8 +1998,21 @@ fun RequestDetailsScreen(
                     InfoLine(stringResource(id = R.string.field_request_number), request.requestNumber)
                     InfoLine(stringResource(id = R.string.field_created_at), request.createdAt)
                     InfoLine(stringResource(id = R.string.field_date), request.date)
-                    InfoLine(stringResource(id = R.string.field_customer), request.customer)
-                    InfoLine(stringResource(id = R.string.field_phone), request.phone)
+                    Text(
+                        text = stringResource(id = R.string.organization_details_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    InfoLine(stringResource(id = R.string.field_organization_name), request.organizationName)
+                    InfoLine(stringResource(id = R.string.field_organization_inn), request.organizationInn)
+                    InfoLine(stringResource(id = R.string.field_organization_ogrn), request.organizationOgrn)
+                    InfoLine(stringResource(id = R.string.field_organization_address), request.organizationAddress)
+                    InfoLine(stringResource(id = R.string.field_organization_phone), request.organizationPhone)
+                    InfoLine(stringResource(id = R.string.field_customer_representative), request.customerRepresentative)
+                    InfoLine(
+                        stringResource(id = R.string.field_customer_representative_phone),
+                        request.customerRepresentativePhone
+                    )
                     InfoLine(stringResource(id = R.string.field_equipment_code), request.equipmentCode)
                     InfoLine(stringResource(id = R.string.field_equipment_name), request.equipmentName)
                     InfoLine(stringResource(id = R.string.field_brand), request.brand)
@@ -2165,9 +2152,11 @@ fun ActDetailsScreen(
                     InfoLine(stringResource(id = R.string.field_organization_inn), act.organizationInn)
                     InfoLine(stringResource(id = R.string.field_organization_ogrn), act.organizationOgrn)
                     InfoLine(stringResource(id = R.string.field_organization_address), act.organizationAddress)
+                    InfoLine(stringResource(id = R.string.field_organization_phone), act.organizationPhone)
+                    InfoLine(stringResource(id = R.string.field_customer_representative), act.customerRepresentative)
                     InfoLine(
-                        stringResource(id = R.string.field_organization_phone),
-                        act.organizationPhone.ifBlank { act.phone }
+                        stringResource(id = R.string.field_customer_representative_phone),
+                        act.customerRepresentativePhone
                     )
                 }
             )

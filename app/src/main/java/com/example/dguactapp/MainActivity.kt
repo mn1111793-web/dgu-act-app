@@ -1027,8 +1027,7 @@ fun NewActScreen(
                                 enterpriseCardLauncher.launch(
                                     arrayOf(
                                         "application/pdf",
-                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        "image/*"
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                                     )
                                 )
                             },
@@ -3220,7 +3219,7 @@ private fun formatDateDisplay(millis: Long): String {
     return SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(calendar.time)
 }
 
-internal fun resolveFileName(context: android.content.Context, uri: Uri): String {
+private fun resolveFileName(context: android.content.Context, uri: Uri): String {
     val fileName = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->

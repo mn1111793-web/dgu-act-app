@@ -48,7 +48,7 @@
     <string name="field_phone_placeholder">Введите телефон организации</string>
     <string name="field_customer_representative_phone">Телефон представителя заказчика</string>
     <string name="field_customer_representative_phone_placeholder">Введите телефон представителя заказчика</string>
-    <string name="organization_details_title">Реквизиты организации (Заказчик)</string>
+    <string name="organization_details_title">Данные заказчика</string>
     <string name="customer_representative_block_title">Представитель заказчика</string>
     <string name="field_organization_inn">ИНН</string>
     <string name="field_organization_inn_placeholder">Введите ИНН</string>

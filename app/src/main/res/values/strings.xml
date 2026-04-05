@@ -32,11 +32,6 @@
     <string name="nameplate_photo_hint">Фото должно быть четким, без засветов и бликов, полностью захватывать шильдик. Текст, модель и серийный номер должны читаться.</string>
     <string name="nameplate_photo_selected">Фото шильдика добавлено.</string>
     <string name="nameplate_photo_not_selected">Фото шильдика пока не добавлено.</string>
-    <string name="ocr_debug_enterprise_card_button">OCR предпросмотр карты (debug)</string>
-    <string name="ocr_debug_nameplate_button">OCR предпросмотр шильдика (debug)</string>
-    <string name="ocr_debug_in_progress">OCR-распознавание…</string>
-    <string name="ocr_debug_dialog_title">Сырой OCR-текст: %1$s</string>
-    <string name="ocr_debug_empty">OCR не вернул текст.</string>
     <string name="close_button">Закрыть</string>
     <string name="enterprise_card_detected_dialog_title">Данные из карты предприятия</string>
     <string name="enterprise_card_detected_dialog_text">Проверьте найденные значения. При необходимости исправьте перед подстановкой в форму.</string>

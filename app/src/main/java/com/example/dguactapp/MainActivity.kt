@@ -214,6 +214,7 @@ private fun DguActApp() {
                     organizationOgrn = "",
                     organizationAddress = "",
                     organizationPhone = "",
+                    organizationEmail = "",
                     customerRepresentative = "",
                     customerRepresentativePhone = "",
                     compilationPlace = "",
@@ -471,6 +472,9 @@ fun NewActScreen(
     var organizationPhone by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.organizationPhone ?: existingRequest?.organizationPhone.orEmpty())
     }
+    var organizationEmail by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.organizationEmail ?: existingRequest?.organizationEmail.orEmpty())
+    }
     var compilationPlace by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.compilationPlace ?: existingRequest?.compilationPlace.orEmpty())
     }
@@ -483,6 +487,7 @@ fun NewActScreen(
     var enterpriseCardDetectedOgrn by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var enterpriseCardDetectedAddress by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var enterpriseCardDetectedPhone by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var enterpriseCardDetectedEmail by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var showEnterpriseCardDetectedDialog by rememberSaveable(existingAct?.id) { mutableStateOf(false) }
     var brandSelection by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
@@ -662,11 +667,14 @@ fun NewActScreen(
                 enterpriseCardDetectedOgrn = extracted.organizationOgrn
                 enterpriseCardDetectedAddress = extracted.organizationAddress
                 enterpriseCardDetectedPhone = extracted.organizationPhone
+                enterpriseCardDetectedEmail = extracted.organizationEmail
                 organizationName = extracted.organizationName
                 organizationInn = extracted.organizationInn
                 organizationOgrn = extracted.organizationOgrn
                 organizationAddress = extracted.organizationAddress
                 organizationPhone = extracted.organizationPhone
+                organizationEmail = extracted.organizationEmail
+                showEnterpriseCardDetectedDialog = true
             }
         }
     }
@@ -783,6 +791,7 @@ fun NewActScreen(
             ?: existingRequest?.requestNumber.orEmpty()
         customer = source?.customer?.ifBlank { null } ?: existingRequest?.customer.orEmpty()
         organizationPhone = source?.organizationPhone?.ifBlank { null } ?: existingRequest?.organizationPhone.orEmpty()
+        organizationEmail = source?.organizationEmail?.ifBlank { null } ?: existingRequest?.organizationEmail.orEmpty()
         customerAddress = source?.customerAddress?.ifBlank { null } ?: existingRequest?.customerAddress.orEmpty()
         customerRepresentative = existingRequest?.customerRepresentative.orEmpty()
         customerRepresentativePhone = source?.customerRepresentativePhone?.ifBlank { null }
@@ -1034,6 +1043,13 @@ fun NewActScreen(
                             placeholder = stringResource(id = R.string.field_phone_placeholder),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                         )
+                        FormTextField(
+                            value = organizationEmail,
+                            onValueChange = { organizationEmail = it },
+                            label = stringResource(id = R.string.field_organization_email),
+                            placeholder = stringResource(id = R.string.field_organization_email_placeholder),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                        )
                     }
                     if (isTransferAcceptanceDocument) {
                         DatePickerField(
@@ -1085,6 +1101,14 @@ fun NewActScreen(
                                 label = stringResource(id = R.string.field_organization_phone),
                                 placeholder = stringResource(id = R.string.field_phone_placeholder),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FormTextField(
+                                value = organizationEmail,
+                                onValueChange = { organizationEmail = it },
+                                label = stringResource(id = R.string.field_organization_email),
+                                placeholder = stringResource(id = R.string.field_organization_email_placeholder),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                             )
                         }
                         DetailCard(title = stringResource(id = R.string.customer_representative_block_title)) {
@@ -1638,6 +1662,7 @@ fun NewActScreen(
                             organizationOgrn = organizationOgrn,
                             organizationAddress = organizationAddress,
                             organizationPhone = organizationPhone,
+                            organizationEmail = organizationEmail,
                             customerRepresentative = customerRepresentative,
                             customerRepresentativePhone = customerRepresentativePhone,
                             compilationPlace = compilationPlace,
@@ -1664,6 +1689,7 @@ fun NewActScreen(
                             organizationOgrn = organizationOgrn,
                             organizationAddress = organizationAddress,
                             organizationPhone = organizationPhone,
+                            organizationEmail = organizationEmail,
                             compilationPlace = compilationPlace,
                             equipmentCode = equipmentCode,
                             equipmentName = equipmentName,
@@ -1774,6 +1800,13 @@ fun NewActScreen(
                         label = stringResource(id = R.string.field_organization_phone),
                         placeholder = "+7 ..."
                     )
+                    FormTextField(
+                        value = enterpriseCardDetectedEmail,
+                        onValueChange = { enterpriseCardDetectedEmail = it },
+                        label = stringResource(id = R.string.field_organization_email),
+                        placeholder = stringResource(id = R.string.field_organization_email_placeholder),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                    )
                 }
             },
             confirmButton = {
@@ -1784,6 +1817,7 @@ fun NewActScreen(
                         organizationOgrn = enterpriseCardDetectedOgrn
                         organizationAddress = enterpriseCardDetectedAddress
                         organizationPhone = enterpriseCardDetectedPhone
+                        organizationEmail = enterpriseCardDetectedEmail
                         showEnterpriseCardDetectedDialog = false
                     }
                 ) {
@@ -2047,6 +2081,7 @@ fun RequestDetailsScreen(
                     InfoLine(stringResource(id = R.string.field_organization_ogrn), request.organizationOgrn)
                     InfoLine(stringResource(id = R.string.field_organization_address), request.organizationAddress)
                     InfoLine(stringResource(id = R.string.field_organization_phone), request.organizationPhone)
+                    InfoLine(stringResource(id = R.string.field_organization_email), request.organizationEmail)
                     Text(
                         text = stringResource(id = R.string.customer_representative_block_title),
                         style = MaterialTheme.typography.titleSmall,
@@ -2197,6 +2232,7 @@ fun ActDetailsScreen(
                     InfoLine(stringResource(id = R.string.field_organization_ogrn), act.organizationOgrn)
                     InfoLine(stringResource(id = R.string.field_organization_address), act.organizationAddress)
                     InfoLine(stringResource(id = R.string.field_organization_phone), act.organizationPhone)
+                    InfoLine(stringResource(id = R.string.field_organization_email), act.organizationEmail)
                     if (act.documentType != DocumentType.DiagnosticAct) {
                         Text(
                             text = stringResource(id = R.string.customer_representative_block_title),
@@ -3053,7 +3089,8 @@ private data class EnterpriseCardExtract(
     val organizationInn: String,
     val organizationOgrn: String,
     val organizationAddress: String,
-    val organizationPhone: String
+    val organizationPhone: String,
+    val organizationEmail: String
 )
 
 private fun extractEnterpriseCardData(
@@ -3117,14 +3154,25 @@ private fun extractEnterpriseCardData(
             .orEmpty()
             .normalizeExtractedField()
     }
+    val email = Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE)
+        .find(
+            extractFieldByLabel(
+                text = flattenedText,
+                labelRegex = """(?:e-?mail|электронн(?:ая|ой)\s+почта|почта)"""
+            ).ifBlank { flattenedText }
+        )
+        ?.value
+        .orEmpty()
+        .normalizeExtractedField()
 
-    if (name.isBlank() && inn.isBlank() && ogrn.isBlank() && address.isBlank() && phone.isBlank()) return null
+    if (name.isBlank() && inn.isBlank() && ogrn.isBlank() && address.isBlank() && phone.isBlank() && email.isBlank()) return null
     return EnterpriseCardExtract(
         organizationName = name,
         organizationInn = inn,
         organizationOgrn = ogrn,
         organizationAddress = address,
-        organizationPhone = phone
+        organizationPhone = phone,
+        organizationEmail = email
     )
 }
 
@@ -3235,6 +3283,7 @@ private fun RequestsListScreenPreview() {
                     organizationOgrn = "1027700132195",
                     organizationAddress = "г. Москва, ул. Центральная, д. 10",
                     organizationPhone = "+7 495 000-00-00",
+                    organizationEmail = "info@energo-service.ru",
                     customerRepresentative = "Иванов И.И.",
                     customerRepresentativePhone = "+7 900 000-00-00",
                     compilationPlace = "г. Москва",

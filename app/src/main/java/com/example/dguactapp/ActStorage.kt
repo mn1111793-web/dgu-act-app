@@ -17,6 +17,7 @@ data class RequestRecord(
     val organizationOgrn: String,
     val organizationAddress: String,
     val organizationPhone: String,
+    val organizationEmail: String,
     val customerRepresentative: String,
     val customerRepresentativePhone: String,
     val compilationPlace: String,
@@ -44,6 +45,7 @@ data class ActRecord(
     val organizationOgrn: String = "",
     val organizationAddress: String = "",
     val organizationPhone: String = "",
+    val organizationEmail: String = "",
     val compilationPlace: String = "",
     val equipmentCode: String,
     val equipmentName: String,
@@ -167,6 +169,7 @@ object ActStorage {
         put("organizationOgrn", organizationOgrn)
         put("organizationAddress", organizationAddress)
         put("organizationPhone", organizationPhone)
+        put("organizationEmail", organizationEmail)
         put("compilationPlace", compilationPlace)
         put("equipmentCode", equipmentCode)
         put("equipmentName", equipmentName)
@@ -283,6 +286,7 @@ object ActStorage {
             organizationOgrn = optString("organizationOgrn"),
             organizationAddress = optString("organizationAddress"),
             organizationPhone = optString("organizationPhone"),
+            organizationEmail = optString("organizationEmail"),
             compilationPlace = optString("compilationPlace"),
             equipmentCode = optString("equipmentCode"),
             equipmentName = optString("equipmentName"),
@@ -438,6 +442,7 @@ object RequestStorage {
         put("organizationOgrn", organizationOgrn)
         put("organizationAddress", organizationAddress)
         put("organizationPhone", organizationPhone)
+        put("organizationEmail", organizationEmail)
         put("customerRepresentative", customerRepresentative)
         put("customerRepresentativePhone", customerRepresentativePhone)
         put("compilationPlace", compilationPlace)
@@ -462,6 +467,7 @@ object RequestStorage {
         organizationOgrn = optString("organizationOgrn"),
         organizationAddress = optString("organizationAddress"),
         organizationPhone = optString("organizationPhone"),
+        organizationEmail = optString("organizationEmail"),
         customerRepresentative = optString("customerRepresentative"),
         customerRepresentativePhone = optString("customerRepresentativePhone"),
         compilationPlace = optString("compilationPlace"),
@@ -487,6 +493,7 @@ private fun ActRecord.toRequestRecord(): RequestRecord = RequestRecord(
     organizationOgrn = organizationOgrn,
     organizationAddress = organizationAddress,
     organizationPhone = organizationPhone,
+    organizationEmail = organizationEmail,
     customerRepresentative = customerRepresentative,
     customerRepresentativePhone = customerRepresentativePhone,
     compilationPlace = compilationPlace,

@@ -218,6 +218,7 @@ object ActPdfGenerator {
             drawKeyValue("ОГРН", act.organizationOgrn)
             drawKeyValue("Адрес организации", act.organizationAddress)
             drawKeyValue("Телефон организации", act.organizationPhone)
+            drawKeyValue("E-mail организации", act.organizationEmail)
             drawSection("Представитель заказчика")
             drawKeyValue("Представитель заказчика", act.customerRepresentative)
             drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)

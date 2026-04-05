@@ -71,6 +71,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.setValue
@@ -105,6 +106,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.launch
 
 private enum class AppScreen {
     Start,
@@ -940,6 +942,7 @@ fun NewActScreen(
         )
     }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     val signatureSectionIndex = remember(isDiagnosticDocument, diagnosisType) {
         var index = 2
         if (isDiagnosticDocument) {

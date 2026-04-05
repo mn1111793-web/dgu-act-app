@@ -106,6 +106,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipInputStream
 import kotlinx.coroutines.launch
 
 private enum class AppScreen {
@@ -937,7 +938,8 @@ fun NewActScreen(
                             onClick = {
                                 enterpriseCardLauncher.launch(
                                     arrayOf(
-                                        "application/pdf"
+                                        "application/pdf",
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                                     )
                                 )
                             },
@@ -3197,8 +3199,12 @@ private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): 
     val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
     val fileName = resolveFileName(context, uri).lowercase(Locale.ROOT)
     val isPdf = mimeType.contains("pdf") || fileName.endsWith(".pdf") || mimeType.isBlank()
-    if (!isPdf) return null
-    return runCatching { readPdfText(context, uri) }.getOrNull()
+    val isDocx = mimeType.contains("wordprocessingml.document") || fileName.endsWith(".docx")
+    return when {
+        isDocx -> runCatching { readDocxText(context, uri) }.getOrNull()
+        isPdf -> runCatching { readPdfText(context, uri) }.getOrNull()
+        else -> null
+    }
 }
 
 private fun readPdfText(context: android.content.Context, uri: Uri): String {
@@ -3217,6 +3223,49 @@ private fun readPdfText(context: android.content.Context, uri: Uri): String {
         tempFile.delete()
     }
 }
+
+private fun readDocxText(context: android.content.Context, uri: Uri): String {
+    val documentXml = context.contentResolver.openInputStream(uri)?.use { input ->
+        ZipInputStream(input).use { zipInputStream ->
+            var entry = zipInputStream.nextEntry
+            while (entry != null) {
+                if (entry.name == "word/document.xml") {
+                    return@use zipInputStream.bufferedReader(Charsets.UTF_8).readText()
+                }
+                zipInputStream.closeEntry()
+                entry = zipInputStream.nextEntry
+            }
+            ""
+        }
+    }.orEmpty()
+    if (documentXml.isBlank()) return ""
+
+    val paragraphRegex = Regex("""<w:p\b[\s\S]*?</w:p>""")
+    val textRegex = Regex("""<w:t\b[^>]*>([\s\S]*?)</w:t>""")
+
+    val lines = paragraphRegex.findAll(documentXml).mapNotNull { paragraph ->
+        val paragraphText = textRegex.findAll(paragraph.value)
+            .joinToString(separator = "") { it.groupValues.getOrElse(1) { "" } }
+            .decodeDocxXmlValue()
+            .trim()
+        paragraphText.ifBlank { null }
+    }.toList()
+
+    return if (lines.isNotEmpty()) lines.joinToString("\n") else {
+        textRegex.findAll(documentXml)
+            .joinToString(separator = " ") { it.groupValues.getOrElse(1) { "" } }
+            .decodeDocxXmlValue()
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
+}
+
+private fun String.decodeDocxXmlValue(): String = this
+    .replace("&amp;", "&")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&apos;", "'")
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable

@@ -3066,6 +3066,7 @@ private fun extractEnterpriseCardData(
         .lineSequence()
         .map { it.trim() }
         .filter { it.isNotBlank() }
+        .filterNot { it.containsBankRequisitesMarker() }
         .toList()
     if (lines.isEmpty()) return null
 
@@ -3129,11 +3130,16 @@ private fun extractEnterpriseCardData(
 
 private fun extractFieldByLabel(text: String, labelRegex: String): String {
     val valuePattern = Regex(
-        """(?:$labelRegex)\s*(?:[:\-]\s*|\s+)(.+?)(?=(?:,?\s*(?:ИНН|ОГРН(?:ИП)?|(?:юридическ(?:ий|ого)\s+)?адрес|телефон|тел\.?|контактн(?:ый|ого)\s+телефон)\b)|$)""",
+        """(?:$labelRegex)\s*(?:[:\-]\s*|\s+)(.+?)(?=(?:,?\s*(?:ИНН|КПП|ОГРН(?:ИП)?|(?:юридическ(?:ий|ого)\s+)?адрес|телефон|тел\.?|контактн(?:ый|ого)\s+телефон|банк|БИК|р/с|расч[её]тн(?:ый|ого)\s+сч[её]т|к/с|корреспондентск(?:ий|ого)\s+сч[её]т)\b)|$)""",
         RegexOption.IGNORE_CASE
     )
     return valuePattern.find(text)?.groupValues?.getOrNull(1).orEmpty().normalizeExtractedField()
 }
+
+private fun String.containsBankRequisitesMarker(): Boolean = Regex(
+    """\b(?:банк|БИК|р/с|расч[её]тн(?:ый|ого)\s+сч[её]т|к/с|корреспондентск(?:ий|ого)\s+сч[её]т)\b""",
+    RegexOption.IGNORE_CASE
+).containsMatchIn(this)
 
 private fun String.normalizeExtractedField(): String = trim()
     .trim(',', ';', '.')

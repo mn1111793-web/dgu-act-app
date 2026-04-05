@@ -212,7 +212,7 @@ object ActPdfGenerator {
             drawKeyValue("Дата создания", act.createdAt)
             drawSection("Исполнитель")
             drawKeyValue("Реквизиты", executorRequisites, blankLines = 3)
-            drawSection("Реквизиты организации (Заказчик)")
+            drawSection("Данные заказчика")
             drawKeyValue("Наименование организации", act.organizationName)
             drawKeyValue("ИНН", act.organizationInn)
             drawKeyValue("ОГРН", act.organizationOgrn)

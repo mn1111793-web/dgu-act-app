@@ -555,6 +555,9 @@ fun NewActScreen(
     val photos = rememberSaveable(existingAct?.id, saver = ActPhotoListSaver) {
         existingAct?.photos.orEmpty().toMutableStateList()
     }
+    var nameplatePhotoId by rememberSaveable(existingAct?.id) {
+        mutableStateOf(existingAct?.photos?.firstOrNull()?.id.orEmpty())
+    }
     val customerSignatureDraft = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
         existingAct?.customerSignature.orEmpty().toMutableStateList()
     }
@@ -598,10 +601,26 @@ fun NewActScreen(
         )
     }
     var pendingCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
+    var pendingNameplateCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
     var isImportingPhotos by remember { mutableStateOf(false) }
+    var isImportingNameplatePhoto by remember { mutableStateOf(false) }
     var saveCompleted by remember { mutableStateOf(false) }
     val initialPhotoPaths = remember(existingAct?.id) {
         existingAct?.photos.orEmpty().map { it.filePath }.toSet()
+    }
+    val nameplatePhoto = remember(photos, nameplatePhotoId) {
+        photos.firstOrNull { it.id == nameplatePhotoId }
+    }
+    val setNameplatePhoto: (ActPhoto) -> Unit = { newPhoto ->
+        val previousPhoto = photos.firstOrNull { it.id == nameplatePhotoId }
+        if (previousPhoto != null) {
+            photos.removeAll { it.id == previousPhoto.id }
+            if (previousPhoto.filePath !in initialPhotoPaths) {
+                PhotoStorage.deletePhoto(previousPhoto)
+            }
+        }
+        photos.add(0, newPhoto)
+        nameplatePhotoId = newPhoto.id
     }
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -610,6 +629,17 @@ fun NewActScreen(
         pendingCameraPhoto = null
         if (success && createdPhoto != null) {
             photos.add(createdPhoto)
+        } else if (createdPhoto != null) {
+            PhotoStorage.deletePhoto(createdPhoto)
+        }
+    }
+    val takeNameplatePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val createdPhoto = pendingNameplateCameraPhoto
+        pendingNameplateCameraPhoto = null
+        if (success && createdPhoto != null) {
+            setNameplatePhoto(createdPhoto)
         } else if (createdPhoto != null) {
             PhotoStorage.deletePhoto(createdPhoto)
         }
@@ -642,6 +672,43 @@ fun NewActScreen(
         val imported = uris.mapNotNull { uri -> PhotoStorage.importPhotoFromUri(context, uri) }
         photos.addAll(imported)
         if (uris.isNotEmpty() && imported.isEmpty()) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.photos_import_error),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    val nameplateCameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val createdPhoto = PhotoStorage.createCameraPhoto(context)
+            pendingNameplateCameraPhoto = createdPhoto
+            takeNameplatePictureLauncher.launch(
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    java.io.File(createdPhoto.filePath)
+                )
+            )
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.photos_camera_permission_denied),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    val nameplateGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        isImportingNameplatePhoto = false
+        if (uri == null) return@rememberLauncherForActivityResult
+        val importedPhoto = PhotoStorage.importPhotoFromUri(context, uri)
+        if (importedPhoto != null) {
+            setNameplatePhoto(importedPhoto)
+        } else {
             Toast.makeText(
                 context,
                 context.getString(R.string.photos_import_error),
@@ -686,6 +753,7 @@ fun NewActScreen(
                 photos.filterNot { it.filePath in initialPhotoPaths }.forEach(PhotoStorage::deletePhoto)
             }
             pendingCameraPhoto?.let(PhotoStorage::deletePhoto)
+            pendingNameplateCameraPhoto?.let(PhotoStorage::deletePhoto)
         }
     }
     LaunchedEffect(enterpriseCardUri) {
@@ -853,6 +921,27 @@ fun NewActScreen(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
     }
+    val onTakeNameplatePhotoClick = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            val createdPhoto = PhotoStorage.createCameraPhoto(context)
+            pendingNameplateCameraPhoto = createdPhoto
+            takeNameplatePictureLauncher.launch(
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    java.io.File(createdPhoto.filePath)
+                )
+            )
+        } else {
+            nameplateCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+    val onPickNameplatePhotoClick = {
+        isImportingNameplatePhoto = true
+        nameplateGalleryLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val signatureSectionIndex = remember(isDiagnosticDocument, diagnosisType) {
@@ -957,6 +1046,59 @@ fun NewActScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(id = R.string.nameplate_photo_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(id = R.string.nameplate_photo_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Button(
+                                onClick = onTakeNameplatePhotoClick,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(text = stringResource(id = R.string.photos_take_photo))
+                            }
+                            OutlinedButton(
+                                onClick = onPickNameplatePhotoClick,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(text = stringResource(id = R.string.photos_pick_from_gallery))
+                            }
+                        }
+                        if (isImportingNameplatePhoto) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text(
+                                    text = stringResource(id = R.string.photos_loading),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Text(
+                            text = if (nameplatePhoto != null) {
+                                stringResource(id = R.string.nameplate_photo_selected)
+                            } else {
+                                stringResource(id = R.string.nameplate_photo_not_selected)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         DropdownField(
                             value = selectedEquipment?.displayName.orEmpty(),
                             options = EquipmentCatalog.equipmentTypes.map { it.displayName },
@@ -1440,6 +1582,9 @@ fun NewActScreen(
                         onDeletePhoto = { photo ->
                             if (photo.filePath !in initialPhotoPaths) {
                                 PhotoStorage.deletePhoto(photo)
+                            }
+                            if (photo.id == nameplatePhotoId) {
+                                nameplatePhotoId = ""
                             }
                             photos.removeAll { it.id == photo.id }
                         }

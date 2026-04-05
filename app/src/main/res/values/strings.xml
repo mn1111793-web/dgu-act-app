@@ -28,6 +28,10 @@
     <string name="field_status_placeholder">Выберите статус</string>
     <string name="upload_enterprise_card">Загрузить карту предприятия</string>
     <string name="enterprise_card_selected">Карта предприятия выбрана: %1$s</string>
+    <string name="nameplate_photo_title">Фото шильдика</string>
+    <string name="nameplate_photo_hint">Фото должно быть четким, без засветов и бликов, полностью захватывать шильдик. Текст, модель и серийный номер должны читаться.</string>
+    <string name="nameplate_photo_selected">Фото шильдика добавлено.</string>
+    <string name="nameplate_photo_not_selected">Фото шильдика пока не добавлено.</string>
     <string name="enterprise_card_detected_dialog_title">Данные из карты предприятия</string>
     <string name="enterprise_card_detected_dialog_text">Проверьте найденные значения. При необходимости исправьте перед подстановкой в форму.</string>
     <string name="apply_enterprise_card_data">Подтвердить</string>

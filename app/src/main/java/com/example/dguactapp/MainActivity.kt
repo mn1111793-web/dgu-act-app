@@ -1081,7 +1081,6 @@ fun NewActScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 Text(
                                     text = stringResource(id = R.string.photos_loading),
                                     style = MaterialTheme.typography.bodyMedium,

@@ -3300,7 +3300,7 @@ private fun formatDateDisplay(millis: Long): String {
     return SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(calendar.time)
 }
 
-private fun resolveFileName(context: android.content.Context, uri: Uri): String {
+internal fun resolveFileName(context: android.content.Context, uri: Uri): String {
     val fileName = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->

@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import android.os.Bundle
 import android.net.Uri
 import android.widget.Toast
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +43,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -490,6 +492,10 @@ fun NewActScreen(
     var enterpriseCardDetectedPhone by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var enterpriseCardDetectedEmail by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var showEnterpriseCardDetectedDialog by rememberSaveable(existingAct?.id) { mutableStateOf(false) }
+    var isOcrDebugInProgress by rememberSaveable(existingAct?.id) { mutableStateOf(false) }
+    var showOcrDebugDialog by rememberSaveable(existingAct?.id) { mutableStateOf(false) }
+    var ocrDebugSource by rememberSaveable(existingAct?.id) { mutableStateOf("") }
+    var ocrDebugText by rememberSaveable(existingAct?.id) { mutableStateOf("") }
     var brandSelection by rememberSaveable(existingAct?.id) {
         mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
     }
@@ -621,6 +627,31 @@ fun NewActScreen(
         }
         photos.add(0, newPhoto)
         nameplatePhotoId = newPhoto.id
+    }
+    val coroutineScope = rememberCoroutineScope()
+    val runOcrDebug: (Uri) -> Unit = { uri ->
+        coroutineScope.launch {
+            isOcrDebugInProgress = true
+            val result = runCatching { readOcrDebugText(context, uri) }.getOrNull()
+            val text = result?.text?.trim().orEmpty()
+            ocrDebugSource = result?.source.orEmpty()
+            ocrDebugText = if (text.isBlank()) {
+                context.getString(R.string.ocr_debug_empty)
+            } else {
+                text
+            }
+            showOcrDebugDialog = true
+            isOcrDebugInProgress = false
+            val logPayload = if (text.isBlank()) {
+                "<empty>"
+            } else {
+                text.take(3000)
+            }
+            Log.d(
+                "OCR_DEBUG",
+                "source=${ocrDebugSource.ifBlank { "unknown" }}; text=$logPayload"
+            )
+        }
     }
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -943,7 +974,6 @@ fun NewActScreen(
         )
     }
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val signatureSectionIndex = remember(isDiagnosticDocument, diagnosisType) {
         var index = 2
         if (isDiagnosticDocument) {
@@ -1028,13 +1058,22 @@ fun NewActScreen(
                                 enterpriseCardLauncher.launch(
                                     arrayOf(
                                         "application/pdf",
-                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        "image/*"
                                     )
                                 )
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(text = stringResource(id = R.string.upload_enterprise_card))
+                        }
+                        if (enterpriseCardUri.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = { runOcrDebug(Uri.parse(enterpriseCardUri)) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(text = stringResource(id = R.string.ocr_debug_enterprise_card_button))
+                            }
                         }
                         if (enterpriseCardUri.isNotBlank()) {
                             Text(
@@ -1099,6 +1138,28 @@ fun NewActScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (nameplatePhoto != null) {
+                            OutlinedButton(
+                                onClick = { runOcrDebug(Uri.fromFile(java.io.File(nameplatePhoto.filePath))) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(text = stringResource(id = R.string.ocr_debug_nameplate_button))
+                            }
+                        }
+                        if (isOcrDebugInProgress) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text(
+                                    text = stringResource(id = R.string.ocr_debug_in_progress),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                         DropdownField(
                             value = selectedEquipment?.displayName.orEmpty(),
                             options = EquipmentCatalog.equipmentTypes.map { it.displayName },
@@ -1974,6 +2035,25 @@ fun NewActScreen(
             dismissButton = {
                 TextButton(onClick = { showEnterpriseCardDetectedDialog = false }) {
                     Text(text = stringResource(id = R.string.skip_enterprise_card_data))
+                }
+            }
+        )
+    }
+    if (showOcrDebugDialog) {
+        AlertDialog(
+            onDismissRequest = { showOcrDebugDialog = false },
+            title = { Text(text = stringResource(id = R.string.ocr_debug_dialog_title, ocrDebugSource.ifBlank { "-" })) },
+            text = {
+                SelectionContainer {
+                    Text(
+                        text = ocrDebugText,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showOcrDebugDialog = false }) {
+                    Text(text = stringResource(id = R.string.close_button))
                 }
             }
         )

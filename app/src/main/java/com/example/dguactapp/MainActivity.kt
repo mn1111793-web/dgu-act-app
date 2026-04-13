@@ -1122,8 +1122,7 @@ fun NewActScreen(
                             requestNumberEditedManually = true
                         },
                         label = stringResource(id = R.string.field_request_number),
-                        placeholder = stringResource(id = R.string.field_request_number_placeholder),
-                        readOnly = isAcceptanceDocument
+                        placeholder = stringResource(id = R.string.field_request_number_placeholder)
                     )
                     DatePickerField(
                         value = createdAt,
@@ -1356,21 +1355,12 @@ fun NewActScreen(
                             minLines = 3
                         )
                     } else {
-                        if (isDiagnosticDocument) {
-                            DatePickerField(
-                                value = date,
-                                onDateSelected = { date = it },
-                                label = stringResource(id = R.string.field_date),
-                                placeholder = stringResource(id = R.string.field_date_placeholder)
-                            )
-                        } else {
-                            FormTextField(
-                                value = date,
-                                onValueChange = { date = it },
-                                label = stringResource(id = R.string.field_date),
-                                placeholder = stringResource(id = R.string.field_date_placeholder)
-                            )
-                        }
+                        DatePickerField(
+                            value = date,
+                            onDateSelected = { date = it },
+                            label = stringResource(id = R.string.field_date),
+                            placeholder = stringResource(id = R.string.field_date_placeholder)
+                        )
                         if (!isDiagnosticDocument && !isAcceptanceDocument) {
                             FormTextField(
                                 value = customer,

@@ -52,6 +52,12 @@ object ActPdfGenerator {
         "4.2. Доступ к оборудованию и любые работы осуществляются уполномоченными сотрудниками Исполнителя."
     )
 
+    private fun DocumentType.pdfFilePrefix(): String = when (this) {
+        DocumentType.DiagnosticAct -> "akt_diagnostiki"
+        DocumentType.TransferAcceptanceAct -> "akt_priema_peredachi"
+        DocumentType.AcceptanceAct -> "akt_sdachi_priema"
+    }
+
     fun generate(context: Context, act: ActRecord, mode: PdfMode = PdfMode.Filled): Result<File> = runCatching {
         val pdfDirectory = File(context.filesDir, "act_pdfs")
         if (!pdfDirectory.exists() && !pdfDirectory.mkdirs()) {
@@ -59,7 +65,7 @@ object ActPdfGenerator {
         }
 
         val suffix = if (mode == PdfMode.Blank) "blank" else "filled"
-        val fileName = "akt_${act.requestNumber.ifBlank { act.id.toString() }}_$suffix.pdf"
+        val fileName = "${act.documentType.pdfFilePrefix()}_${act.requestNumber.ifBlank { act.id.toString() }}_$suffix.pdf"
             .replace("[^a-zA-Z0-9а-яА-Я._-]".toRegex(), "_")
         val outputFile = File(pdfDirectory, fileName)
 
@@ -296,12 +302,7 @@ object ActPdfGenerator {
         }
 
         drawSharedHeader(
-            title = when (act.documentType) {
-                DocumentType.DiagnosticAct -> "АКТ ДИАГНОСТИКИ ОБОРУДОВАНИЯ"
-                DocumentType.TransferAcceptanceAct -> "АКТ ПРИЁМА-ПЕРЕДАЧИ ОБОРУДОВАНИЯ НА ДИАГНОСТИКУ"
-                DocumentType.AcceptanceAct -> "АКТ СДАЧИ-ПРИЁМА ОБОРУДОВАНИЯ ИЗ РЕМОНТА"
-            },
-            subtitle = act.documentType.title
+            title = act.documentType.title
         )
 
         drawBaseInfoSections(act.documentType)

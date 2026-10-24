@@ -48,6 +48,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -107,6 +108,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private enum class AppScreen {
     Start,
@@ -116,16 +119,6 @@ private enum class AppScreen {
     ActDetails
 }
 
-private enum class EquipmentTransferState(val value: String) {
-    Working("в рабочем состоянии"),
-    NotWorking("в нерабочем состоянии"),
-    PartiallyWorking("частично в рабочем состоянии");
-
-    companion object {
-        fun fromValue(value: String): EquipmentTransferState =
-            values().firstOrNull { it.value == value } ?: Working
-    }
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,12 +142,27 @@ private fun DguActApp() {
     val savedActs = remember { androidx.compose.runtime.mutableStateListOf<ActRecord>() }
     val savedRequests = remember { androidx.compose.runtime.mutableStateListOf<RequestRecord>() }
 
+    var storageError by remember { mutableStateOf<String?>(null) }
+    var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        savedActs.clear()
-        savedActs.addAll(ActStorage.loadActs(context))
-        savedRequests.clear()
-        savedRequests.addAll(RequestStorage.loadRequests(context, savedActs))
+        runCatching { LocalRepository.read(context) }.onSuccess { snapshot ->
+            savedActs.addAll(snapshot.acts)
+            savedRequests.addAll(snapshot.requests)
+            loaded = true
+        }.onFailure { storageError = "Данные не прочитаны. Запись заблокирована: ${it.message}" }
     }
+    if (!loaded) {
+        Text(storageError ?: "Чтение данных…", modifier = Modifier.padding(24.dp))
+        return
+    }
+    fun handleStorageFailure(error: Throwable) {
+        if (error is SnapshotCommitUncertainException) {
+            storageError = error.message
+            loaded = false // Do not allocate another request/revision ID as an automatic retry.
+        }
+        Toast.makeText(context, error.message ?: "Запись не выполнена", Toast.LENGTH_LONG).show()
+    }
+    fun operation(action: () -> Unit): Boolean = loaded && runCatching(action).onFailure(::handleStorageFailure).isSuccess
 
     var currentScreen by rememberSaveable { mutableStateOf(AppScreen.Start.name) }
     var selectedActId by rememberSaveable { mutableLongStateOf(-1L) }
@@ -172,37 +180,28 @@ private fun DguActApp() {
     }
 
     fun deleteAct(act: ActRecord) {
-        val deletedAct = ActStorage.deleteAct(context, act.id) ?: return
-        deletedAct.photos.forEach(PhotoStorage::deletePhoto)
-        savedActs.removeAll { it.id == act.id }
-        if (selectedActId == act.id) selectedActId = -1L
-
-        val hasMoreActs = savedActs.any { it.requestId == deletedAct.requestId }
-        if (!hasMoreActs) {
-            RequestStorage.deleteRequest(context, deletedAct.requestId)
-            savedRequests.removeAll { it.id == deletedAct.requestId }
-            if (selectedRequestId == deletedAct.requestId) selectedRequestId = -1L
+        if (operation { LocalRepository.deleteAct(context, act.id) }) {
+            savedActs.removeAll { it.id == act.id }
+            if (selectedActId == act.id) selectedActId = -1L
         }
     }
 
     fun deleteRequest(request: RequestRecord) {
-        val requestActs = savedActs.filter { it.requestId == request.id }
-        requestActs.forEach { act ->
-            act.photos.forEach(PhotoStorage::deletePhoto)
-            ActStorage.deleteAct(context, act.id)
+        if (operation { LocalRepository.deleteRequest(context, request.id) }) {
+            savedActs.removeAll { it.requestId == request.id }
+            savedRequests.removeAll { it.id == request.id }
+            if (selectedRequestId == request.id) selectedRequestId = -1L
+            selectedActId = -1L
         }
-        savedActs.removeAll { it.requestId == request.id }
-        RequestStorage.deleteRequest(context, request.id)
-        savedRequests.removeAll { it.id == request.id }
-        if (selectedRequestId == request.id) selectedRequestId = -1L
-        if (selectedActId != -1L && requestActs.any { it.id == selectedActId }) selectedActId = -1L
     }
+    val draftKey = "form-v1-${selectedRequestId}-${selectedActId}-${requestedDocumentType}"
 
     when (AppScreen.valueOf(currentScreen)) {
         AppScreen.Start -> StartScreen(
-            onCreateRequestClick = {
+            onCreateRequestClick = { operation {
                 val newRequest = RequestRecord(
-                    id = System.currentTimeMillis(),
+                    id = LocalRules.newId(),
+                    reservedSequence = LocalRepository.read(context).sequence + 1,
                     requestNumber = "",
                     createdAt = currentDateDisplay(),
                     date = currentDateDisplay(),
@@ -228,32 +227,34 @@ private fun DguActApp() {
                 upsertRequest(newRequest)
                 selectedRequestId = newRequest.id
                 currentScreen = AppScreen.RequestDetails.name
-            },
+            } },
             onOpenRequestsClick = { currentScreen = AppScreen.RequestsList.name }
         )
 
-        AppScreen.NewAct -> NewActScreen(
+        AppScreen.NewAct -> DurableForm(draftKey) { flush -> NewActScreen(
             existingAct = selectedAct,
+            flushDraft = flush,
             existingRequest = selectedRequest,
             existingActs = savedActs,
             initialDocumentType = DocumentType.fromStorageValue(requestedDocumentType),
             onBackClick = {
-                currentScreen = if (selectedAct != null) AppScreen.ActDetails.name else AppScreen.RequestDetails.name
+                if (flush()) currentScreen = if (selectedAct != null) AppScreen.ActDetails.name else AppScreen.RequestDetails.name
             },
-            onSaveClick = { act, request ->
-                upsertRequest(request)
-                ActStorage.upsertAct(context, act)
-                val existingIndex = savedActs.indexOfFirst { it.id == act.id }
-                if (existingIndex >= 0) savedActs.removeAt(existingIndex)
-                savedActs.add(0, act)
+            onSaveClick = { act, request, correction ->
+                check(loaded) { "Нужно перечитать данные после неопределённого результата" }
+                val snapshot = try {
+                    LocalRepository.saveDocument(context, act, request, draftKey, correction)
+                } catch (error: Exception) { handleStorageFailure(error); throw error }
+                savedRequests.clear(); savedRequests.addAll(snapshot.requests)
+                savedActs.clear(); savedActs.addAll(snapshot.acts)
                 selectedRequestId = request.id
                 selectedActId = act.id
                 currentScreen = AppScreen.ActDetails.name
             }
-        )
+        ) }
 
         AppScreen.RequestsList -> RequestsListScreen(
-            requests = savedRequests,
+            requests = LocalRules.newestFirst(savedRequests.toList(), { it.createdAtMillis }, { it.id }),
             acts = savedActs,
             onBackClick = { currentScreen = AppScreen.Start.name },
             onRequestClick = { request ->
@@ -266,7 +267,7 @@ private fun DguActApp() {
         AppScreen.RequestDetails -> if (selectedRequest != null) {
             RequestDetailsScreen(
                 request = selectedRequest,
-                acts = savedActs.filter { it.requestId == selectedRequest.id }.sortedByDescending { it.createdAt },
+                acts = savedActs.filter { it.requestId == selectedRequest.id }.let { LocalRules.newestFirst(it, { item -> item.createdAtMillis }, { item -> item.id }) },
                 onBackClick = { currentScreen = AppScreen.RequestsList.name },
                 onCreateDocument = { docType ->
                     requestedDocumentType = docType.storageValue
@@ -280,7 +281,7 @@ private fun DguActApp() {
             )
         } else {
             RequestsListScreen(
-                requests = savedRequests,
+                requests = LocalRules.newestFirst(savedRequests.toList(), { it.createdAtMillis }, { it.id }),
                 acts = savedActs,
                 onBackClick = { currentScreen = AppScreen.Start.name },
                 onRequestClick = { request ->
@@ -297,6 +298,18 @@ private fun DguActApp() {
                 onBackClick = { currentScreen = AppScreen.RequestDetails.name },
                 onEditClick = {
                     selectedRequestId = selectedAct.requestId
+                    if (selectedAct.hasSignatures()) {
+                        val revision = selectedAct.copy(id = LocalRules.newId(), revision = selectedAct.revision + 1,
+                            supersedesId = selectedAct.id, createdAtMillis = System.currentTimeMillis(),
+                            createdAt = currentDateDisplay(), status = ActStatus.Draft, pdfPath = "",
+                            customerSignature = emptyList(), executorSignature = emptyList(), directorSignature = emptyList())
+                            .withRequest(savedRequests.first { it.id == selectedAct.requestId })
+                        val request = savedRequests.first { it.id == revision.requestId }
+                        if (!operation { LocalRepository.saveDocument(context, revision, request, "") }) return@ActDetailsScreen
+                        savedActs.add(revision)
+                        selectedActId = revision.id
+                        Toast.makeText(context, "Новая версия без подписей. Исходная сохранена.", Toast.LENGTH_LONG).show()
+                    }
                     requestedDocumentType = selectedAct.documentType.storageValue
                     currentScreen = AppScreen.NewAct.name
                 },
@@ -411,251 +424,239 @@ fun NewActScreen(
     existingActs: List<ActRecord> = emptyList(),
     initialDocumentType: DocumentType = DocumentType.DiagnosticAct,
     onBackClick: () -> Unit = {},
-    onSaveClick: (ActRecord, RequestRecord) -> Unit = { _, _ -> }
+    onSaveClick: (ActRecord, RequestRecord, Boolean) -> Unit = { _, _, _ -> },
+    flushDraft: () -> Boolean = { true }
 ) {
     val context = LocalContext.current
+    val formActId = rememberSaveable(key = "formActId") { existingAct?.id ?: LocalRules.newId() }
+    val formCreatedAtMillis = rememberSaveable(key = "formCreatedAtMillis") { existingAct?.createdAtMillis ?: System.currentTimeMillis() }
+    val formRequestId = rememberSaveable(key = "formRequestId") { existingRequest?.id ?: existingAct?.requestId ?: LocalRules.newId() }
+    val formEquipmentId = rememberSaveable(key = "formEquipmentId") { existingRequest?.equipmentId ?: existingAct?.equipmentId ?: java.util.UUID.randomUUID().toString() }
     val today = remember { currentDateDisplay() }
     val requestDatePart = remember { currentDateForRequestNumber() }
-    val nextSequence = remember(existingActs) { ActStorage.nextSequence(context, existingActs) }
+    val nextSequence = remember(existingRequest?.id) { existingRequest?.reservedSequence?.takeIf { it > 0 } ?: ActStorage.nextSequence(context, existingActs) }
 
-    var equipmentCode by rememberSaveable(existingAct?.id) {
+    var equipmentCode by rememberSaveable(existingAct?.id, key = "equipmentCode") {
         mutableStateOf(existingAct?.equipmentCode ?: existingRequest?.equipmentCode.orEmpty())
     }
-    var documentType by rememberSaveable(existingAct?.id) {
+    var documentType by rememberSaveable(existingAct?.id, key = "documentType") {
         mutableStateOf(existingAct?.documentType ?: initialDocumentType)
     }
-    val linkedTransferAct = remember(existingActs, existingRequest?.id, existingAct?.requestNumber, existingRequest?.requestNumber) {
-        val targetRequestNumber = existingAct?.requestNumber?.ifBlank { null }
-            ?: existingRequest?.requestNumber?.ifBlank { null }
-            ?: ""
-        existingActs
-            .asSequence()
-            .filter { it.documentType == DocumentType.TransferAcceptanceAct }
-            .filter {
-                (existingRequest != null && it.requestId == existingRequest.id) ||
-                    (targetRequestNumber.isNotBlank() && it.requestNumber == targetRequestNumber)
-            }
-            .maxByOrNull { it.createdAt }
-    }
-    var createdAt by rememberSaveable(existingAct?.id) {
+    var createdAt by rememberSaveable(existingAct?.id, key = "createdAt") {
         mutableStateOf(
-            existingAct?.createdAt?.ifBlank { today } ?: existingRequest?.createdAt?.ifBlank { today } ?: today
+            existingAct?.createdAt?.ifBlank { today } ?: today
         )
     }
-    var equipmentName by rememberSaveable(existingAct?.id) {
+    var equipmentName by rememberSaveable(existingAct?.id, key = "equipmentName") {
         mutableStateOf(existingAct?.equipmentName ?: existingRequest?.equipmentName.orEmpty())
     }
-    var date by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.date?.ifBlank { today } ?: existingRequest?.date?.ifBlank { today } ?: today)
+    var date by rememberSaveable(existingAct?.id, key = "date") {
+        mutableStateOf(existingAct?.date?.ifBlank { today } ?: today)
     }
-    var customer by rememberSaveable(existingAct?.id) {
+    var customer by rememberSaveable(existingAct?.id, key = "customer") {
         mutableStateOf(existingAct?.customer ?: existingRequest?.customer.orEmpty())
     }
-    var phone by rememberSaveable(existingAct?.id) {
+    var phone by rememberSaveable(existingAct?.id, key = "phone") {
         mutableStateOf(existingAct?.phone ?: existingRequest?.phone.orEmpty())
     }
-    var customerAddress by rememberSaveable(existingAct?.id) {
+    var customerAddress by rememberSaveable(existingAct?.id, key = "customerAddress") {
         mutableStateOf(existingAct?.customerAddress ?: existingRequest?.customerAddress.orEmpty())
     }
-    var organizationName by rememberSaveable(existingAct?.id) {
+    var organizationName by rememberSaveable(existingAct?.id, key = "organizationName") {
         mutableStateOf(existingAct?.organizationName ?: existingRequest?.organizationName.orEmpty())
     }
-    var organizationInn by rememberSaveable(existingAct?.id) {
+    var organizationInn by rememberSaveable(existingAct?.id, key = "organizationInn") {
         mutableStateOf(existingAct?.organizationInn ?: existingRequest?.organizationInn.orEmpty())
     }
-    var organizationOgrn by rememberSaveable(existingAct?.id) {
+    var organizationOgrn by rememberSaveable(existingAct?.id, key = "organizationOgrn") {
         mutableStateOf(existingAct?.organizationOgrn ?: existingRequest?.organizationOgrn.orEmpty())
     }
-    var organizationAddress by rememberSaveable(existingAct?.id) {
+    var organizationAddress by rememberSaveable(existingAct?.id, key = "organizationAddress") {
         mutableStateOf(existingAct?.organizationAddress ?: existingRequest?.organizationAddress.orEmpty())
     }
-    var organizationPhone by rememberSaveable(existingAct?.id) {
+    var organizationPhone by rememberSaveable(existingAct?.id, key = "organizationPhone") {
         mutableStateOf(existingAct?.organizationPhone ?: existingRequest?.organizationPhone.orEmpty())
     }
-    var organizationEmail by rememberSaveable(existingAct?.id) {
+    var organizationEmail by rememberSaveable(existingAct?.id, key = "organizationEmail") {
         mutableStateOf(existingAct?.organizationEmail ?: existingRequest?.organizationEmail.orEmpty())
     }
-    var compilationPlace by rememberSaveable(existingAct?.id) {
+    var compilationPlace by rememberSaveable(existingAct?.id, key = "compilationPlace") {
         mutableStateOf(existingAct?.compilationPlace ?: existingRequest?.compilationPlace.orEmpty())
     }
-    var enterpriseCardUri by rememberSaveable(existingAct?.id) {
+    var enterpriseCardUri by rememberSaveable(existingAct?.id, key = "enterpriseCardUri") {
         mutableStateOf(existingRequest?.enterpriseCardUri.orEmpty())
     }
-    var enterpriseCardFileName by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var enterpriseCardDetectedName by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var enterpriseCardDetectedInn by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var enterpriseCardDetectedOgrn by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var enterpriseCardDetectedAddress by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var enterpriseCardDetectedPhone by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var enterpriseCardDetectedEmail by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var showEnterpriseCardDetectedDialog by rememberSaveable(existingAct?.id) { mutableStateOf(false) }
-    var brandSelection by rememberSaveable(existingAct?.id) {
+    var enterpriseCardFileName by rememberSaveable(existingAct?.id, key = "enterpriseCardFileName") { mutableStateOf("") }
+    var enterpriseCardDetectedName by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedName") { mutableStateOf("") }
+    var enterpriseCardDetectedInn by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedInn") { mutableStateOf("") }
+    var enterpriseCardDetectedOgrn by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedOgrn") { mutableStateOf("") }
+    var enterpriseCardDetectedAddress by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedAddress") { mutableStateOf("") }
+    var enterpriseCardDetectedPhone by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedPhone") { mutableStateOf("") }
+    var enterpriseCardDetectedEmail by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedEmail") { mutableStateOf("") }
+    var showEnterpriseCardDetectedDialog by rememberSaveable(existingAct?.id, key = "showEnterpriseCardDetectedDialog") { mutableStateOf(false) }
+    var brandSelection by rememberSaveable(existingAct?.id, key = "brandSelection") {
         mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
     }
-    var customBrand by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var modelSelection by rememberSaveable(existingAct?.id) {
+    var customBrand by rememberSaveable(existingAct?.id, key = "customBrand") { mutableStateOf("") }
+    var modelSelection by rememberSaveable(existingAct?.id, key = "modelSelection") {
         mutableStateOf(existingAct?.model ?: existingRequest?.model.orEmpty())
     }
-    var customModel by rememberSaveable(existingAct?.id) { mutableStateOf("") }
-    var serialNumber by rememberSaveable(existingAct?.id) {
+    var customModel by rememberSaveable(existingAct?.id, key = "customModel") { mutableStateOf("") }
+    var serialNumber by rememberSaveable(existingAct?.id, key = "serialNumber") {
         mutableStateOf(existingAct?.serialNumber ?: existingRequest?.serialNumber.orEmpty())
     }
-    var operatingTime by rememberSaveable(existingAct?.id) {
+    var operatingTime by rememberSaveable(existingAct?.id, key = "operatingTime") {
         mutableStateOf(existingAct?.operatingTime.orEmpty())
     }
-    var customerRepresentative by rememberSaveable(existingAct?.id) {
+    var customerRepresentative by rememberSaveable(existingAct?.id, key = "customerRepresentative") {
         mutableStateOf(
-            existingAct?.customerRepresentative
-                ?.ifBlank { existingRequest?.customerRepresentative.orEmpty() }
-                .orEmpty()
+            existingAct?.customerRepresentative ?: existingRequest?.customerRepresentative.orEmpty()
         )
     }
-    var customerRepresentativePhone by rememberSaveable(existingAct?.id) {
+    var customerRepresentativePhone by rememberSaveable(existingAct?.id, key = "customerRepresentativePhone") {
         mutableStateOf(existingAct?.customerRepresentativePhone ?: existingRequest?.customerRepresentativePhone.orEmpty())
     }
-    var malfunctionDescription by rememberSaveable(existingAct?.id) {
+    var malfunctionDescription by rememberSaveable(existingAct?.id, key = "malfunctionDescription") {
         mutableStateOf(existingAct?.malfunctionDescription.orEmpty())
     }
-    var transferCompleteness by rememberSaveable(existingAct?.id) {
+    var transferCompleteness by rememberSaveable(existingAct?.id, key = "transferCompleteness") {
         mutableStateOf(existingAct?.completeness.orEmpty())
     }
-    var transferExternalCondition by rememberSaveable(existingAct?.id) {
+    var transferExternalCondition by rememberSaveable(existingAct?.id, key = "transferExternalCondition") {
         mutableStateOf(existingAct?.externalCondition.orEmpty())
     }
-    var diagnosisType by rememberSaveable(existingAct?.id) {
+    var diagnosisType by rememberSaveable(existingAct?.id, key = "diagnosisType") {
         mutableStateOf(existingAct?.diagnosisType ?: DiagnosisType.Primary)
     }
-    val checklistItems = rememberSaveable(existingAct?.id, saver = ChecklistStateSaver) {
+    val checklistItems = rememberSaveable(existingAct?.id, key = "checklistItems", saver = ChecklistStateSaver) {
         DiagnosticChecklistCatalog.stateFor(
             type = DiagnosisType.Advanced,
             savedItems = existingAct?.checklistItems.orEmpty(),
             legacyAct = existingAct
         ).toMutableStateList()
     }
-    var preliminaryConclusion by rememberSaveable(existingAct?.id) {
+    var preliminaryConclusion by rememberSaveable(existingAct?.id, key = "preliminaryConclusion") {
         mutableStateOf(
             existingAct?.preliminaryConclusion?.ifBlank {
                 DiagnosticChecklistCatalog.primaryConclusionFromLegacy(existingAct)
             }.orEmpty()
         )
     }
-    var rootCause by rememberSaveable(existingAct?.id) {
+    var rootCause by rememberSaveable(existingAct?.id, key = "rootCause") {
         mutableStateOf(existingAct?.rootCause.orEmpty())
     }
-    var requiredWorks by rememberSaveable(existingAct?.id) {
+    var requiredWorks by rememberSaveable(existingAct?.id, key = "requiredWorks") {
         mutableStateOf(existingAct?.requiredWorks.orEmpty())
     }
-    var pdfPath by rememberSaveable(existingAct?.id) {
+    var pdfPath by rememberSaveable(existingAct?.id, key = "pdfPath") {
         mutableStateOf(existingAct?.pdfPath.orEmpty())
     }
-    var comment by rememberSaveable(existingAct?.id) {
+    var comment by rememberSaveable(existingAct?.id, key = "comment") {
         mutableStateOf(existingAct?.comment.orEmpty())
     }
-    val photos = rememberSaveable(existingAct?.id, saver = ActPhotoListSaver) {
+    val photos = rememberSaveable(existingAct?.id, key = "photos", saver = ActPhotoListSaver) {
         existingAct?.photos.orEmpty().toMutableStateList()
     }
-    var nameplatePhotoId by rememberSaveable(existingAct?.id) {
-        mutableStateOf(existingAct?.photos?.firstOrNull()?.id.orEmpty())
+    var nameplatePhotoId by rememberSaveable(existingAct?.id, key = "nameplatePhotoId") {
+        mutableStateOf(existingAct?.nameplatePhotoId.orEmpty())
     }
-    val customerSignatureDraft = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+    val customerSignatureDraft = rememberSaveable(existingAct?.id, key = "customerSignatureDraft", saver = SignatureStrokeListSaver) {
         existingAct?.customerSignature.orEmpty().toMutableStateList()
     }
-    val customerSignatureSaved = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+    val customerSignatureSaved = rememberSaveable(existingAct?.id, key = "customerSignatureSaved", saver = SignatureStrokeListSaver) {
         existingAct?.customerSignature.orEmpty().toMutableStateList()
     }
-    val executorSignatureDraft = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+    val executorSignatureDraft = rememberSaveable(existingAct?.id, key = "executorSignatureDraft", saver = SignatureStrokeListSaver) {
         existingAct?.executorSignature.orEmpty().toMutableStateList()
     }
-    val executorSignatureSaved = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+    val executorSignatureSaved = rememberSaveable(existingAct?.id, key = "executorSignatureSaved", saver = SignatureStrokeListSaver) {
         existingAct?.executorSignature.orEmpty().toMutableStateList()
     }
-    val directorSignatureDraft = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+    val directorSignatureDraft = rememberSaveable(existingAct?.id, key = "directorSignatureDraft", saver = SignatureStrokeListSaver) {
         existingAct?.directorSignature.orEmpty().toMutableStateList()
     }
-    val directorSignatureSaved = rememberSaveable(existingAct?.id, saver = SignatureStrokeListSaver) {
+    val directorSignatureSaved = rememberSaveable(existingAct?.id, key = "directorSignatureSaved", saver = SignatureStrokeListSaver) {
         existingAct?.directorSignature.orEmpty().toMutableStateList()
     }
-    var signatureDecoding by rememberSaveable(existingAct?.id) {
+    var signatureDecoding by rememberSaveable(existingAct?.id, key = "signatureDecoding") {
         mutableStateOf(existingAct?.signatureDecoding.orEmpty())
     }
-    var customerSignatureDecoding by rememberSaveable(existingAct?.id) {
+    var customerSignatureDecoding by rememberSaveable(existingAct?.id, key = "customerSignatureDecoding") {
         mutableStateOf(
             existingAct?.customerSignatureDecoding
                 ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
                 .orEmpty()
         )
     }
-    var executorSignatureDecoding by rememberSaveable(existingAct?.id) {
+    var executorSignatureDecoding by rememberSaveable(existingAct?.id, key = "executorSignatureDecoding") {
         mutableStateOf(
             existingAct?.executorSignatureDecoding
                 ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
                 .orEmpty()
         )
     }
-    var directorSignatureDecoding by rememberSaveable(existingAct?.id) {
+    var directorSignatureDecoding by rememberSaveable(existingAct?.id, key = "directorSignatureDecoding") {
         mutableStateOf(
             existingAct?.directorSignatureDecoding
                 ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
                 .orEmpty()
         )
     }
-    var pendingCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
-    var pendingNameplateCameraPhoto by remember { mutableStateOf<ActPhoto?>(null) }
+    var pendingCameraPath by rememberSaveable(key = "pendingCameraPath") { mutableStateOf("") }
+    var pendingNameplateCameraPath by rememberSaveable(key = "pendingNameplateCameraPath") { mutableStateOf("") }
     var isImportingPhotos by remember { mutableStateOf(false) }
     var isImportingNameplatePhoto by remember { mutableStateOf(false) }
-    var saveCompleted by remember { mutableStateOf(false) }
-    val initialPhotoPaths = remember(existingAct?.id) {
-        existingAct?.photos.orEmpty().map { it.filePath }.toSet()
-    }
+
     val nameplatePhoto = remember(photos, nameplatePhotoId) {
         photos.firstOrNull { it.id == nameplatePhotoId }
     }
     val setNameplatePhoto: (ActPhoto) -> Unit = { newPhoto ->
-        val previousPhoto = photos.firstOrNull { it.id == nameplatePhotoId }
-        if (previousPhoto != null) {
-            photos.removeAll { it.id == previousPhoto.id }
-            if (previousPhoto.filePath !in initialPhotoPaths) {
-                PhotoStorage.deletePhoto(previousPhoto)
-            }
-        }
         photos.add(0, newPhoto)
         nameplatePhotoId = newPhoto.id
+    }
+    fun launchCamera(photo: ActPhoto, launcher: androidx.activity.result.ActivityResultLauncher<Uri>) {
+        if (!flushDraft()) return
+        runCatching {
+            launcher.launch(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", java.io.File(photo.filePath)))
+        }.onFailure { Toast.makeText(context, "Не удалось открыть камеру: ${it.message}", Toast.LENGTH_LONG).show() }
     }
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        val createdPhoto = pendingCameraPhoto
-        pendingCameraPhoto = null
+        val createdPhoto = pendingCameraPath.takeIf { it.isNotBlank() }?.let { ActPhoto(id = java.io.File(it).nameWithoutExtension, filePath = it) }
+        pendingCameraPath = ""
         if (success && createdPhoto != null) {
-            photos.add(createdPhoto)
+            PhotoStorage.confirmCameraPhoto(createdPhoto).onSuccess { photos.add(it) }.onFailure {
+                Toast.makeText(context, "Фото не сохранено: ${it.message}", Toast.LENGTH_LONG).show()
+            }
         } else if (createdPhoto != null) {
-            PhotoStorage.deletePhoto(createdPhoto)
+            // Cancelled camera originals retained conservatively.
         }
     }
     val takeNameplatePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        val createdPhoto = pendingNameplateCameraPhoto
-        pendingNameplateCameraPhoto = null
+        val createdPhoto = pendingNameplateCameraPath.takeIf { it.isNotBlank() }?.let { ActPhoto(id = java.io.File(it).nameWithoutExtension, filePath = it) }
+        pendingNameplateCameraPath = ""
         if (success && createdPhoto != null) {
-            setNameplatePhoto(createdPhoto)
+            PhotoStorage.confirmCameraPhoto(createdPhoto).onSuccess { setNameplatePhoto(it) }.onFailure {
+                Toast.makeText(context, "Фото не сохранено: ${it.message}", Toast.LENGTH_LONG).show()
+            }
         } else if (createdPhoto != null) {
-            PhotoStorage.deletePhoto(createdPhoto)
+            // Cancelled camera originals retained conservatively.
         }
     }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            val createdPhoto = PhotoStorage.createCameraPhoto(context)
-            pendingCameraPhoto = createdPhoto
-            takePictureLauncher.launch(
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    java.io.File(createdPhoto.filePath)
-                )
-            )
+            val createdPhoto = runCatching { PhotoStorage.createCameraPhoto(context, formRequestId, formEquipmentId, formActId) }.getOrElse {
+                Toast.makeText(context, "Камера не открыта: ${it.message}", Toast.LENGTH_LONG).show()
+                null
+            }
+            if (createdPhoto == null) return@rememberLauncherForActivityResult
+            pendingCameraPath = createdPhoto.filePath
+            launchCamera(createdPhoto, takePictureLauncher)
         } else {
             Toast.makeText(
                 context,
@@ -668,9 +669,9 @@ fun NewActScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
     ) { uris ->
         isImportingPhotos = false
-        val imported = uris.mapNotNull { uri -> PhotoStorage.importPhotoFromUri(context, uri) }
+        val imported = uris.mapNotNull { uri -> PhotoStorage.importPhotoFromUri(context, uri, formRequestId, formEquipmentId, formActId) }
         photos.addAll(imported)
-        if (uris.isNotEmpty() && imported.isEmpty()) {
+        if (uris.size != imported.size) {
             Toast.makeText(
                 context,
                 context.getString(R.string.photos_import_error),
@@ -682,15 +683,13 @@ fun NewActScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            val createdPhoto = PhotoStorage.createCameraPhoto(context)
-            pendingNameplateCameraPhoto = createdPhoto
-            takeNameplatePictureLauncher.launch(
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    java.io.File(createdPhoto.filePath)
-                )
-            )
+            val createdPhoto = runCatching { PhotoStorage.createCameraPhoto(context, formRequestId, formEquipmentId, formActId) }.getOrElse {
+                Toast.makeText(context, "Камера не открыта: ${it.message}", Toast.LENGTH_LONG).show()
+                null
+            }
+            if (createdPhoto == null) return@rememberLauncherForActivityResult
+            pendingNameplateCameraPath = createdPhoto.filePath
+            launchCamera(createdPhoto, takeNameplatePictureLauncher)
         } else {
             Toast.makeText(
                 context,
@@ -704,7 +703,7 @@ fun NewActScreen(
     ) { uri ->
         isImportingNameplatePhoto = false
         if (uri == null) return@rememberLauncherForActivityResult
-        val importedPhoto = PhotoStorage.importPhotoFromUri(context, uri)
+        val importedPhoto = PhotoStorage.importPhotoFromUri(context, uri, formRequestId, formEquipmentId, formActId)
         if (importedPhoto != null) {
             setNameplatePhoto(importedPhoto)
         } else {
@@ -735,26 +734,11 @@ fun NewActScreen(
                 enterpriseCardDetectedAddress = extracted.organizationAddress
                 enterpriseCardDetectedPhone = extracted.organizationPhone
                 enterpriseCardDetectedEmail = extracted.organizationEmail
-                organizationName = extracted.organizationName
-                organizationInn = extracted.organizationInn
-                organizationOgrn = extracted.organizationOgrn
-                organizationAddress = extracted.organizationAddress
-                organizationPhone = extracted.organizationPhone
-                organizationEmail = extracted.organizationEmail
                 showEnterpriseCardDetectedDialog = true
             }
         }
     }
 
-    DisposableEffect(existingAct?.id) {
-        onDispose {
-            if (!saveCompleted) {
-                photos.filterNot { it.filePath in initialPhotoPaths }.forEach(PhotoStorage::deletePhoto)
-            }
-            pendingCameraPhoto?.let(PhotoStorage::deletePhoto)
-            pendingNameplateCameraPhoto?.let(PhotoStorage::deletePhoto)
-        }
-    }
     LaunchedEffect(enterpriseCardUri) {
         if (enterpriseCardUri.isNotBlank() && enterpriseCardFileName.isBlank()) {
             enterpriseCardFileName = resolveFileName(context, Uri.parse(enterpriseCardUri))
@@ -784,19 +768,8 @@ fun NewActScreen(
     }
 
     LaunchedEffect(equipmentCode, selectedEquipment?.name) {
-        if (equipmentCode.isNotBlank() && equipmentName != selectedEquipment?.name) {
+        if (equipmentCode.isNotBlank() && equipmentName.isBlank()) {
             equipmentName = selectedEquipment?.name.orEmpty()
-        }
-    }
-
-    LaunchedEffect(equipmentCode, brandSelection, brandOptions) {
-        if (equipmentCode.isNotBlank() && brandSelection.isNotBlank() &&
-            brandSelection != EquipmentCatalog.OTHER_OPTION && brandSelection !in brandOptions
-        ) {
-            brandSelection = ""
-            modelSelection = ""
-            customBrand = ""
-            customModel = ""
         }
     }
 
@@ -806,17 +779,6 @@ fun NewActScreen(
             brandSelection.isBlank() -> listOf(EquipmentCatalog.OTHER_OPTION)
             brandSelection == EquipmentCatalog.OTHER_OPTION -> listOf(EquipmentCatalog.OTHER_OPTION)
             else -> EquipmentCatalog.modelOptions(equipmentCode, brandSelection)
-        }
-    }
-
-    LaunchedEffect(brandSelection, modelSelection, modelOptions) {
-        if (brandSelection != EquipmentCatalog.OTHER_OPTION &&
-            modelSelection.isNotBlank() &&
-            modelSelection != EquipmentCatalog.OTHER_OPTION &&
-            modelSelection !in modelOptions
-        ) {
-            modelSelection = ""
-            customModel = ""
         }
     }
 
@@ -832,8 +794,8 @@ fun NewActScreen(
             ?: existingRequest?.requestNumber?.ifBlank { null }
             ?: if (equipmentCode.isBlank()) "" else "$equipmentCode-$nextSequence-$requestDatePart"
     }
-    var requestNumber by rememberSaveable(existingAct?.id) { mutableStateOf(generatedRequestNumber) }
-    var requestNumberEditedManually by rememberSaveable(existingAct?.id) {
+    var requestNumber by rememberSaveable(existingAct?.id, key = "requestNumber") { mutableStateOf(generatedRequestNumber) }
+    var requestNumberEditedManually by rememberSaveable(existingAct?.id, key = "requestNumberEditedManually") {
         mutableStateOf(existingAct != null || existingRequest?.requestNumber?.isNotBlank() == true)
     }
     LaunchedEffect(generatedRequestNumber, equipmentCode) {
@@ -841,7 +803,7 @@ fun NewActScreen(
             requestNumber = generatedRequestNumber
         }
     }
-    var equipmentTransferState by rememberSaveable(existingAct?.id) {
+    var equipmentTransferState by rememberSaveable(existingAct?.id, key = "equipmentTransferState") {
         mutableStateOf(
             EquipmentTransferState.fromValue(existingAct?.equipmentTransferState.orEmpty())
         )
@@ -852,28 +814,56 @@ fun NewActScreen(
     val isDiagnosticDocument = documentType == DocumentType.DiagnosticAct
     val isTransferAcceptanceDocument = documentType == DocumentType.TransferAcceptanceAct
     val isAcceptanceDocument = documentType == DocumentType.AcceptanceAct
-    LaunchedEffect(isAcceptanceDocument, linkedTransferAct?.id, existingRequest?.id) {
-        if (!isAcceptanceDocument) return@LaunchedEffect
-        val source = linkedTransferAct
-        requestNumber = source?.requestNumber?.ifBlank { null }
-            ?: existingRequest?.requestNumber.orEmpty()
-        customer = source?.customer?.ifBlank { null } ?: existingRequest?.customer.orEmpty()
-        organizationPhone = source?.organizationPhone?.ifBlank { null } ?: existingRequest?.organizationPhone.orEmpty()
-        organizationEmail = source?.organizationEmail?.ifBlank { null } ?: existingRequest?.organizationEmail.orEmpty()
-        customerAddress = source?.customerAddress?.ifBlank { null } ?: existingRequest?.customerAddress.orEmpty()
-        customerRepresentative = existingRequest?.customerRepresentative.orEmpty()
-        customerRepresentativePhone = source?.customerRepresentativePhone?.ifBlank { null }
-            ?: existingRequest?.customerRepresentativePhone.orEmpty()
-        equipmentCode = source?.equipmentCode?.ifBlank { null } ?: existingRequest?.equipmentCode.orEmpty()
-        equipmentName = source?.equipmentName?.ifBlank { null } ?: existingRequest?.equipmentName.orEmpty()
-        serialNumber = source?.serialNumber?.ifBlank { null } ?: existingRequest?.serialNumber.orEmpty()
-        if (source?.brand?.isNotBlank() == true) {
-            brandSelection = source.brand
-        }
-        if (source?.model?.isNotBlank() == true) {
-            modelSelection = source.model
+    val equipmentCorrectionFingerprint = org.json.JSONArray(listOf(existingRequest?.equipmentId, existingRequest?.equipmentCode, existingRequest?.brand, existingRequest?.model, existingRequest?.serialNumber, equipmentCode, resolvedBrand, resolvedModel, serialNumber)).toString()
+    var confirmedEquipmentCorrection by rememberSaveable(key = "confirmedEquipmentCorrection") { mutableStateOf("") }
+    var showEquipmentCorrectionDialog by rememberSaveable(key = "showEquipmentCorrectionDialog") { mutableStateOf(false) }
+    val contentFingerprint = org.json.JSONArray(listOf(
+        documentType.storageValue,
+        requestNumber,
+        createdAt,
+        date,
+        customer,
+        phone,
+        customerAddress,
+        organizationName,
+        organizationInn,
+        organizationOgrn,
+        organizationAddress,
+        organizationPhone,
+        organizationEmail,
+        compilationPlace,
+        customerRepresentative,
+        customerRepresentativePhone,
+        equipmentCode,
+        equipmentName,
+        resolvedBrand,
+        resolvedModel,
+        serialNumber,
+        operatingTime,
+        transferCompleteness,
+        transferExternalCondition,
+        malfunctionDescription,
+        diagnosisType.storageValue,
+        checklistItems.toList().toString(),
+        preliminaryConclusion,
+        rootCause,
+        requiredWorks,
+        equipmentTransferState.value,
+        comment,
+        photos.toList().toString(),
+        customerSignatureDecoding,
+        executorSignatureDecoding,
+        directorSignatureDecoding)).toString()
+    var signatureBinding by rememberSaveable(key = "signatureBinding") { mutableStateOf("") }
+    fun invalidateChangedSignatures() {
+        if (signatureBinding.isNotEmpty() && signatureBinding != contentFingerprint) {
+            customerSignatureSaved.clear(); executorSignatureSaved.clear(); directorSignatureSaved.clear()
+            customerSignatureDraft.clear(); executorSignatureDraft.clear(); directorSignatureDraft.clear()
+            signatureBinding = ""
+            Toast.makeText(context, "Содержимое изменилось: подписи сброшены, требуется повторное подписание", Toast.LENGTH_LONG).show()
         }
     }
+    LaunchedEffect(contentFingerprint) { invalidateChangedSignatures() }
     val status = remember(
         date,
         customer,
@@ -899,61 +889,45 @@ fun NewActScreen(
             directorSignature = directorSignatureSaved.toList()
         )
     }
-    val onTakePhotoClick = {
+    val onTakePhotoClick = takePhoto@{
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            val createdPhoto = PhotoStorage.createCameraPhoto(context)
-            pendingCameraPhoto = createdPhoto
-            takePictureLauncher.launch(
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    java.io.File(createdPhoto.filePath)
-                )
-            )
+            val createdPhoto = runCatching { PhotoStorage.createCameraPhoto(context, formRequestId, formEquipmentId, formActId) }.getOrElse {
+                Toast.makeText(context, "Камера не открыта: ${it.message}", Toast.LENGTH_LONG).show()
+                null
+            }
+            if (createdPhoto == null) return@takePhoto
+            pendingCameraPath = createdPhoto.filePath
+            launchCamera(createdPhoto, takePictureLauncher)
         } else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            if (flushDraft()) cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
     val onPickPhotoClick = {
         isImportingPhotos = true
-        galleryLauncher.launch(
+        if (flushDraft()) galleryLauncher.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
     }
-    val onTakeNameplatePhotoClick = {
+    val onTakeNameplatePhotoClick = takeNameplate@{
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            val createdPhoto = PhotoStorage.createCameraPhoto(context)
-            pendingNameplateCameraPhoto = createdPhoto
-            takeNameplatePictureLauncher.launch(
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    java.io.File(createdPhoto.filePath)
-                )
-            )
+            val createdPhoto = runCatching { PhotoStorage.createCameraPhoto(context, formRequestId, formEquipmentId, formActId) }.getOrElse {
+                Toast.makeText(context, "Камера не открыта: ${it.message}", Toast.LENGTH_LONG).show()
+                null
+            }
+            if (createdPhoto == null) return@takeNameplate
+            pendingNameplateCameraPath = createdPhoto.filePath
+            launchCamera(createdPhoto, takeNameplatePictureLauncher)
         } else {
-            nameplateCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            if (flushDraft()) nameplateCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
     val onPickNameplatePhotoClick = {
         isImportingNameplatePhoto = true
-        nameplateGalleryLauncher.launch(
+        if (flushDraft()) nameplateGalleryLauncher.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
     }
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
-    val signatureSectionIndex = remember(isDiagnosticDocument, diagnosisType) {
-        var index = 2
-        if (isDiagnosticDocument) {
-            index += 1 // diagnosis type block
-            index += DiagnosticChecklistCatalog.sectionsFor(diagnosisType).size
-            index += 1 // preliminary conclusion
-            index += 1 // additional info
-            if (diagnosisType == DiagnosisType.Advanced) index += 1
-        }
-        index
-    }
 
     BackHandler(onBack = onBackClick)
 
@@ -1017,14 +991,14 @@ fun NewActScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = stringResource(id = R.string.form_intro_text),
+                        text = "Черновик сохраняется автоматически. «Назад» сохраняет незавершённую форму. Одна заявка — одна единица оборудования. Изменение заполненных реквизитов требует подтверждения исправления этой же единицы. Для другой единицы создайте новую заявку.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (!isAcceptanceDocument) {
                         OutlinedButton(
                             onClick = {
-                                enterpriseCardLauncher.launch(
+                                if (flushDraft()) enterpriseCardLauncher.launch(
                                     arrayOf(
                                         "application/pdf",
                                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -1568,9 +1542,7 @@ fun NewActScreen(
                     PhotoGalleryEditor(
                         photos = photos,
                         onDeletePhoto = { photo ->
-                            if (photo.filePath !in initialPhotoPaths) {
-                                PhotoStorage.deletePhoto(photo)
-                            }
+                            // Remove only the draft reference; retain original.
                             if (photo.id == nameplatePhotoId) {
                                 nameplatePhotoId = ""
                             }
@@ -1669,10 +1641,16 @@ fun NewActScreen(
                             customerSignatureDraft.clear()
                             customerSignatureDraft.addAll(updated)
                         },
-                        onClearClick = { customerSignatureDraft.clear() },
+                        onClearClick = { customerSignatureDraft.clear(); customerSignatureSaved.clear() },
                         onSaveClick = {
+                            if (customerSignatureDraft.isEmpty()) {
+                                Toast.makeText(context, "Сначала поставьте подпись или сохраните акт как черновик", Toast.LENGTH_LONG).show()
+                                return@SignatureEditorCard
+                            }
                             customerSignatureSaved.clear()
                             customerSignatureSaved.addAll(customerSignatureDraft)
+                            signatureBinding = contentFingerprint
+                            if (!flushDraft()) return@SignatureEditorCard
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.signature_customer_saved_message),
@@ -1696,10 +1674,16 @@ fun NewActScreen(
                             executorSignatureDraft.clear()
                             executorSignatureDraft.addAll(updated)
                         },
-                        onClearClick = { executorSignatureDraft.clear() },
+                        onClearClick = { executorSignatureDraft.clear(); executorSignatureSaved.clear() },
                         onSaveClick = {
+                            if (executorSignatureDraft.isEmpty()) {
+                                Toast.makeText(context, "Сначала поставьте подпись или сохраните акт как черновик", Toast.LENGTH_LONG).show()
+                                return@SignatureEditorCard
+                            }
                             executorSignatureSaved.clear()
                             executorSignatureSaved.addAll(executorSignatureDraft)
+                            signatureBinding = contentFingerprint
+                            if (!flushDraft()) return@SignatureEditorCard
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.signature_executor_saved_message),
@@ -1723,10 +1707,16 @@ fun NewActScreen(
                             directorSignatureDraft.clear()
                             directorSignatureDraft.addAll(updated)
                         },
-                        onClearClick = { directorSignatureDraft.clear() },
+                        onClearClick = { directorSignatureDraft.clear(); directorSignatureSaved.clear() },
                         onSaveClick = {
+                            if (directorSignatureDraft.isEmpty()) {
+                                Toast.makeText(context, "Сначала поставьте подпись или сохраните акт как черновик", Toast.LENGTH_LONG).show()
+                                return@SignatureEditorCard
+                            }
                             directorSignatureSaved.clear()
                             directorSignatureSaved.addAll(directorSignatureDraft)
+                            signatureBinding = contentFingerprint
+                            if (!flushDraft()) return@SignatureEditorCard
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.signature_director_saved_message),
@@ -1747,28 +1737,15 @@ fun NewActScreen(
             item {
                 Button(
                     onClick = {
-                        if (customerSignatureSaved.isEmpty()) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.signature_customer_required_error),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            coroutineScope.launch {
-                                listState.animateScrollToItem(signatureSectionIndex)
-                            }
-                            return@Button
-                        }
+                        if (!flushDraft()) return@Button
+                        invalidateChangedSignatures()
                         val completenessSummary = checklistItems.findCommentByKey("visual_completeness")
                         val externalConditionSummary = listOf(
                             checklistItems.findCommentByKey("visual_casing_condition"),
                             checklistItems.findCommentByKey("visual_damage_traces")
                         ).filter { it.isNotBlank() }.joinToString("; ")
                         val actChecklistItems = if (isDiagnosticDocument) {
-                            DiagnosticChecklistCatalog.stateFor(
-                                type = diagnosisType,
-                                savedItems = checklistItems.toList(),
-                                legacyAct = existingAct
-                            )
+                            checklistItems.toList()
                         } else {
                             emptyList()
                         }
@@ -1785,11 +1762,14 @@ fun NewActScreen(
                             directorSignature = directorSignatureSaved.toList()
                         )
                         val requestRecord = RequestRecord(
-                            id = existingRequest?.id ?: existingAct?.requestId ?: System.currentTimeMillis(),
+                            id = formRequestId,
+                            equipmentId = formEquipmentId,
+                            reservedSequence = existingRequest?.reservedSequence ?: nextSequence,
+                            createdAtMillis = existingRequest?.createdAtMillis ?: formCreatedAtMillis,
                             requestNumber = requestNumber,
-                            createdAt = createdAt,
-                            date = date.ifBlank { context.getString(R.string.default_date_value) },
-                            customer = customer.ifBlank { context.getString(R.string.default_customer_value) },
+                            createdAt = existingRequest?.createdAt ?: createdAt,
+                            date = existingRequest?.date ?: date,
+                            customer = customer,
                             phone = phone,
                             customerAddress = customerAddress,
                             organizationName = organizationName,
@@ -1808,14 +1788,23 @@ fun NewActScreen(
                             model = resolvedModel,
                             serialNumber = serialNumber
                         )
+                        if (existingRequest?.changesAssignedEquipment(requestRecord) == true &&
+                            confirmedEquipmentCorrection != equipmentCorrectionFingerprint) {
+                            showEquipmentCorrectionDialog = true
+                            return@Button
+                        }
                         val act = ActRecord(
-                            id = existingAct?.id ?: System.currentTimeMillis(),
+                            id = formActId,
+                            equipmentId = formEquipmentId,
+                            createdAtMillis = formCreatedAtMillis,
+                            revision = existingAct?.revision ?: 1,
+                            supersedesId = existingAct?.supersedesId ?: 0L,
                             requestId = requestRecord.id,
                             documentType = documentType,
                             status = actStatus,
                             createdAt = createdAt,
                             requestNumber = requestRecord.requestNumber,
-                            date = requestRecord.date,
+                            date = date,
                             customer = requestRecord.customer,
                             phone = phone,
                             customerAddress = customerAddress,
@@ -1847,12 +1836,13 @@ fun NewActScreen(
                             } else {
                                 ""
                             },
-                            rootCause = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) rootCause else "",
-                            requiredWorks = if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) requiredWorks else "",
+                            rootCause = rootCause,
+                            requiredWorks = requiredWorks,
                             equipmentTransferState = if (isAcceptanceDocument) equipmentTransferState.value else "",
                             pdfPath = pdfPath,
-                            comment = if (isDiagnosticDocument || isAcceptanceDocument) "" else comment,
+                            comment = comment,
                             photos = photos.toList(),
+                            nameplatePhotoId = nameplatePhotoId,
                             customerSignature = customerSignatureSaved.toList(),
                             executorSignature = executorSignatureSaved.toList(),
                             directorSignature = directorSignatureSaved.toList(),
@@ -1861,9 +1851,9 @@ fun NewActScreen(
                             executorSignatureDecoding = executorSignatureDecoding,
                             directorSignatureDecoding = directorSignatureDecoding
                         )
-                        PhotoStorage.deleteMissingPhotos(existingAct?.photos.orEmpty(), act.photos)
-                        saveCompleted = true
-                        onSaveClick(act, requestRecord)
+                        if (runCatching { onSaveClick(act, requestRecord, confirmedEquipmentCorrection == equipmentCorrectionFingerprint) }.onFailure {
+                            Toast.makeText(context, if (it is SnapshotCommitUncertainException) it.message else "Акт не сохранён: ${it.message}", Toast.LENGTH_LONG).show()
+                        }.isFailure) return@Button
                         Toast.makeText(
                             context,
                             if (existingAct == null) {
@@ -1892,6 +1882,20 @@ fun NewActScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
+    }
+    if (showEquipmentCorrectionDialog) {
+        AlertDialog(
+            onDismissRequest = { showEquipmentCorrectionDialog = false },
+            title = { Text("Исправление той же единицы оборудования") },
+            text = { Text("Подтвердите, что это исправление описания той же физической единицы, а не замена оборудования. Прежний serial: ${existingRequest?.serialNumber.orEmpty()}. Новый serial: $serialNumber. Неподписанные акты этой заявки обновятся. Подписанные версии сохранят прежние сведения. Для другой единицы нужна отдельная заявка.") },
+            confirmButton = { TextButton(onClick = {
+                confirmedEquipmentCorrection = equipmentCorrectionFingerprint
+                showEquipmentCorrectionDialog = false
+                flushDraft()
+                Toast.makeText(context, "Исправление подтверждено. Нажмите «Сохранить»", Toast.LENGTH_LONG).show()
+            }) { Text("Та же единица — исправить") } },
+            dismissButton = { TextButton(onClick = { showEquipmentCorrectionDialog = false }) { Text("Отмена") } }
+        )
     }
     if (showEnterpriseCardDetectedDialog) {
         AlertDialog(
@@ -2108,25 +2112,17 @@ fun RequestsListScreen(
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
-                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = request.requestNumber,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                TextButton(onClick = { requestPendingDelete = request }) {
-                                    Text(text = stringResource(id = R.string.delete_button))
-                                }
+                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(request.requestNumber.ifBlank { "Черновик заявки" }, style = MaterialTheme.typography.titleSmall)
+                                Text(request.customer.ifBlank { request.organizationName.ifBlank { "Заказчик не заполнен" } }, style = MaterialTheme.typography.bodyMedium)
+                                Text(listOf(request.equipmentName, request.model, request.serialNumber).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
                             }
-                            InfoLine(stringResource(id = R.string.field_created_at), request.createdAt)
-                            InfoLine(stringResource(id = R.string.field_customer), request.customer)
-                            InfoLine(stringResource(id = R.string.field_equipment_name), request.equipmentName)
-                            InfoLine(stringResource(id = R.string.request_documents_count), documentsCount.toString())
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(request.createdAt, style = MaterialTheme.typography.bodySmall)
+                                Text("Актов: $documentsCount", style = MaterialTheme.typography.bodySmall)
+                                TextButton(onClick = { requestPendingDelete = request }) { Text("Удалить") }
+                            }
                         }
                     }
                 }
@@ -2260,8 +2256,12 @@ fun RequestDetailsScreen(
                                     .padding(vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(text = act.documentType.title)
-                                Text(text = act.date)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${act.documentType.title} · ${act.requestNumber} · v${act.revision}", style = MaterialTheme.typography.titleSmall)
+                                    Text(act.customer.ifBlank { act.organizationName }, style = MaterialTheme.typography.bodySmall)
+                                    Text(listOf(act.model, act.serialNumber).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                                }
+                                Text(text = act.date, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -2280,25 +2280,40 @@ fun ActDetailsScreen(
     onDeleteAct: (ActRecord) -> Unit = {}
 ) {
     val context = LocalContext.current
-    var generatedPdfUri by remember(act.id) { mutableStateOf<Uri?>(null) }
+    val pdfScope = rememberCoroutineScope()
+    var pdfBusy by remember { mutableStateOf(false) }
+    var pendingPdfPath by rememberSaveable(act.id) { mutableStateOf("") }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     BackHandler(onBack = onBackClick)
-
-    fun generatePdf(mode: ActPdfGenerator.PdfMode): Uri? {
-        val result = ActPdfGenerator.generate(context, act, mode)
-        return result.getOrNull()?.let { file ->
-            FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
+    val savePdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null && pendingPdfPath.isNotBlank()) pdfScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val source = java.io.File(pendingPdfPath)
+                require(source.isFile) { "Исходный PDF недоступен" }
+                context.contentResolver.openOutputStream(uri, "w")?.use { output -> source.inputStream().use { it.copyTo(output) } }
+                    ?: error("Не удалось открыть выбранный файл")
+            } }
+            Toast.makeText(context, result.fold({ "PDF сохранён (это не резервная копия базы)" },
+                { "PDF не сохранён: ${it.message}" }), Toast.LENGTH_LONG).show()
         }
     }
-
-    fun sharePdf(pdfUri: Uri) {
+    fun producePdf(mode: ActPdfGenerator.PdfMode, action: (java.io.File) -> Unit) {
+        if (pdfBusy) return
+        pdfBusy = true
+        pdfScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { ActPdfGenerator.generate(context, act, mode) }
+                result.onSuccess { file -> runCatching { action(file) }.onFailure {
+                    Toast.makeText(context, "Не удалось открыть действие PDF: ${it.message}", Toast.LENGTH_LONG).show()
+                } }.onFailure { Toast.makeText(context, "PDF не создан: ${it.message}", Toast.LENGTH_LONG).show() }
+            } finally { pdfBusy = false }
+        }
+    }
+    fun sharePdf(file: java.io.File) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
-            putExtra(Intent.EXTRA_STREAM, pdfUri)
+            putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.share_pdf_title)))
@@ -2465,73 +2480,25 @@ fun ActDetailsScreen(
                 }
             )
 
-            Button(
-                onClick = {
-                    val uri = generatePdf(ActPdfGenerator.PdfMode.Filled)
-                    if (uri != null) {
-                        generatedPdfUri = uri
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.filled_pdf_generated_success),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.pdf_generated_error),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text(text = stringResource(id = R.string.generate_filled_pdf_button))
-            }
-
-            OutlinedButton(
-                onClick = {
-                    val uri = generatePdf(ActPdfGenerator.PdfMode.Blank)
-                    if (uri != null) {
-                        generatedPdfUri = uri
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.blank_pdf_generated_success),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.pdf_generated_error),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text(text = stringResource(id = R.string.generate_blank_pdf_button))
-            }
-
-            OutlinedButton(
-                onClick = {
-                    val uri = generatedPdfUri ?: generatePdf(ActPdfGenerator.PdfMode.Filled)
-                    if (uri != null) {
-                        generatedPdfUri = uri
-                        sharePdf(uri)
-                    } else {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.pdf_share_error),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text(text = stringResource(id = R.string.share_pdf_button))
-            }
+            if (pdfBusy) CircularProgressIndicator()
+            Button(enabled = !pdfBusy, onClick = {
+                producePdf(ActPdfGenerator.PdfMode.Filled) { file ->
+                    pendingPdfPath = file.absolutePath
+                    savePdfLauncher.launch(file.name)
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text("Сохранить заполненный PDF…") }
+            OutlinedButton(enabled = !pdfBusy, onClick = {
+                producePdf(ActPdfGenerator.PdfMode.Blank) { file ->
+                    pendingPdfPath = file.absolutePath
+                    savePdfLauncher.launch(file.name)
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text("Сохранить пустой бланк PDF…") }
+            OutlinedButton(enabled = !pdfBusy, onClick = {
+                producePdf(ActPdfGenerator.PdfMode.Filled) { sharePdf(it) }
+            }, modifier = Modifier.fillMaxWidth()) { Text("Поделиться заполненным PDF") }
+            OutlinedButton(enabled = !pdfBusy, onClick = {
+                producePdf(ActPdfGenerator.PdfMode.Filled) { PdfDelivery.print(context, it) }
+            }, modifier = Modifier.fillMaxWidth()) { Text("Печать A4") }
         }
     }
 
@@ -2625,9 +2592,9 @@ private fun SignatureEditorCard(
         }
         Text(
             text = if (savedSignature.isEmpty()) {
-                stringResource(id = R.string.signature_not_saved)
+                "Подпись ещё не подтверждена в форме"
             } else {
-                stringResource(id = R.string.signature_saved)
+                "Подпись подтверждена в форме; состояние записи показано отдельно"
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -3197,10 +3164,7 @@ private fun currentDateForRequestNumber(): String =
     SimpleDateFormat("ddMMyy", Locale.getDefault()).format(Date())
 
 private fun parseDateDisplayToMillis(value: String): Long? {
-    val parsedDate = runCatching {
-        SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).apply { isLenient = false }.parse(value)
-    }.getOrNull() ?: return null
-    return parsedDate.time
+    return runCatching { LocalRules.legacyTime(value) }.getOrNull()
 }
 
 private fun formatDateDisplay(millis: Long): String {
@@ -3481,3 +3445,5 @@ private fun RequestsListScreenPreview() {
         )
     }
 }
+
+internal fun ActRecord.hasSignatures(): Boolean = customerSignature.isNotEmpty() || executorSignature.isNotEmpty() || directorSignature.isNotEmpty()

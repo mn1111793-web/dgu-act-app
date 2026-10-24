@@ -26,7 +26,10 @@ data class RequestRecord(
     val equipmentName: String,
     val brand: String,
     val model: String,
-    val serialNumber: String
+    val serialNumber: String,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val equipmentId: String = java.util.UUID.randomUUID().toString(),
+    val reservedSequence: Int = 0
 )
 
 data class ActRecord(
@@ -73,7 +76,12 @@ data class ActRecord(
     val signatureDecoding: String = "",
     val customerSignatureDecoding: String = "",
     val executorSignatureDecoding: String = "",
-    val directorSignatureDecoding: String = ""
+    val directorSignatureDecoding: String = "",
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val equipmentId: String = "",
+    val revision: Int = 1,
+    val supersedesId: Long = 0L,
+    val nameplatePhotoId: String = ""
 )
 
 object ActStorage {
@@ -82,38 +90,11 @@ object ActStorage {
     private const val lastSequenceKey = "last_sequence_number"
     private val requestNumberRegex = Regex("^[A-Z]+-(\\d+)-\\d{6}$")
 
-    fun loadActs(context: Context): List<ActRecord> {
-        val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val rawJson = prefs.getString(actsKey, null).orEmpty()
-        if (rawJson.isBlank()) return emptyList()
+    fun loadActs(context: Context): List<ActRecord> = LocalRepository.read(context).acts
 
-        return runCatching {
-            val jsonArray = JSONArray(rawJson)
-            buildList {
-                for (index in 0 until jsonArray.length()) {
-                    val item = jsonArray.optJSONObject(index) ?: continue
-                    add(item.toActRecord())
-                }
-            }
-        }.getOrDefault(emptyList())
-    }
+    fun upsertAct(context: Context, act: ActRecord) = LocalRepository.saveAct(context, act)
 
-    fun upsertAct(context: Context, act: ActRecord) {
-        val updatedActs = loadActs(context)
-            .filterNot { it.id == act.id }
-            .toMutableList()
-            .apply { add(0, act) }
-        saveActs(context, updatedActs)
-        rememberSequence(context, act.requestNumber)
-    }
-
-    fun deleteAct(context: Context, actId: Long): ActRecord? {
-        val acts = loadActs(context)
-        val actToDelete = acts.firstOrNull { it.id == actId } ?: return null
-        val updatedActs = acts.filterNot { it.id == actId }
-        saveActs(context, updatedActs)
-        return actToDelete
-    }
+    fun deleteAct(context: Context, actId: Long): ActRecord? = LocalRepository.deleteAct(context, actId)
 
     fun nextSequence(acts: List<ActRecord>, requests: List<RequestRecord> = emptyList()): Int {
         val actsMax = acts.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
@@ -121,22 +102,8 @@ object ActStorage {
         return maxOf(actsMax, reqMax) + 1
     }
 
-    fun nextSequence(context: Context, acts: List<ActRecord>, requests: List<RequestRecord> = emptyList()): Int {
-        val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val persistedMax = prefs.getInt(lastSequenceKey, 0)
-        val actsMax = acts.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
-        val reqMax = requests.maxOfOrNull { extractSequence(it.requestNumber) ?: 0 } ?: 0
-        return maxOf(persistedMax, actsMax, reqMax) + 1
-    }
-
-    fun rememberSequence(context: Context, requestNumber: String) {
-        val sequence = extractSequence(requestNumber) ?: return
-        val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val currentMax = prefs.getInt(lastSequenceKey, 0)
-        if (sequence > currentMax) {
-            prefs.edit().putInt(lastSequenceKey, sequence).apply()
-        }
-    }
+    fun nextSequence(context: Context, acts: List<ActRecord>, requests: List<RequestRecord> = emptyList()): Int =
+        maxOf(LocalRepository.read(context).sequence + 1, nextSequence(acts, requests))
 
     private fun extractSequence(requestNumber: String): Int? =
         requestNumberRegex.matchEntire(requestNumber)
@@ -144,18 +111,14 @@ object ActStorage {
             ?.getOrNull(1)
             ?.toIntOrNull()
 
-    private fun saveActs(context: Context, acts: List<ActRecord>) {
-        val jsonArray = JSONArray()
-        acts.forEach { act -> jsonArray.put(act.toJson()) }
-        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .edit()
-            .putString(actsKey, jsonArray.toString())
-            .apply()
-    }
-
-    private fun ActRecord.toJson(): JSONObject = JSONObject().apply {
+    internal fun ActRecord.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("requestId", requestId)
+        put("createdAtMillis", createdAtMillis)
+        put("equipmentId", equipmentId)
+        put("revision", revision)
+        put("supersedesId", supersedesId)
+        put("nameplatePhotoId", nameplatePhotoId)
         put("documentType", documentType.storageValue)
         put("status", status.storageValue)
         put("createdAt", createdAt)
@@ -227,7 +190,12 @@ object ActStorage {
         put("directorSignatureDecoding", directorSignatureDecoding)
     }
 
-    private fun JSONObject.toActRecord(): ActRecord {
+    internal fun JSONObject.toActRecord(): ActRecord {
+        require(getLong("id") > 0)
+        require(has("requestNumber") && has("date") && has("customer") && has("equipmentCode") && has("serialNumber")) { "Неполный JSON акта" }
+        if (has("documentType")) require(DocumentType.values().any { it.storageValue == getString("documentType") })
+        if (has("status")) require(ActStatus.values().any { it.storageValue == getString("status") })
+        if (has("diagnosisType")) require(DiagnosisType.values().any { it.storageValue == getString("diagnosisType") })
         val diagnosisType = DiagnosisType.fromStorageValue(optString("diagnosisType"))
         val documentType = DocumentType.fromStorageValue(optString("documentType"))
         val status = ActStatus.fromStorageValue(optString("status"))
@@ -235,7 +203,7 @@ object ActStorage {
             ?.let { jsonArray ->
                 buildList {
                     for (index in 0 until jsonArray.length()) {
-                        val item = jsonArray.optJSONObject(index) ?: continue
+                        val item = jsonArray.getJSONObject(index)
                         add(
                             ChecklistItemState(
                                 key = item.optString("key"),
@@ -254,12 +222,13 @@ object ActStorage {
             ?.let { jsonArray ->
                 buildList {
                     for (index in 0 until jsonArray.length()) {
-                        val item = jsonArray.optJSONObject(index) ?: continue
+                        val item = jsonArray.getJSONObject(index)
                         val filePath = item.optString("filePath")
+                        require(filePath.isNotBlank()) { "Повреждена ссылка на фото" }
                         if (filePath.isNotBlank()) {
                             add(
                                 ActPhoto(
-                                    id = item.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+                                    id = if (has("createdAtMillis")) item.getString("id").also { require(it.isNotBlank()) } else item.optString("id").ifBlank { java.util.UUID.nameUUIDFromBytes(filePath.toByteArray(Charsets.UTF_8)).toString() },
                                     filePath = filePath
                                 )
                             )
@@ -269,13 +238,18 @@ object ActStorage {
             }
             .orEmpty()
 
-        val fallbackId = optLong("id")
+        val fallbackId = getLong("id")
         val legacyRecord = ActRecord(
             id = fallbackId,
-            requestId = optLong("requestId", fallbackId),
+            createdAtMillis = if (has("createdAtMillis")) getLong("createdAtMillis") else LocalRules.legacyTime(optString("createdAt").ifBlank { optString("date") }),
+            equipmentId = if (has("createdAtMillis")) getString("equipmentId") else optString("equipmentId").ifBlank { "legacy-equipment-${optLong("requestId", fallbackId)}" },
+            revision = optInt("revision", 1),
+            supersedesId = optLong("supersedesId", 0),
+            nameplatePhotoId = optString("nameplatePhotoId"),
+            requestId = if (has("createdAtMillis")) getLong("requestId") else optLong("requestId", fallbackId),
             documentType = documentType,
             status = status,
-            createdAt = optString("createdAt").ifBlank { optString("date") },
+            createdAt = if (has("createdAtMillis")) getString("createdAt") else optString("createdAt").ifBlank { optString("date") },
             requestNumber = optString("requestNumber"),
             date = optString("date"),
             customer = optString("customer"),
@@ -303,12 +277,12 @@ object ActStorage {
 
         return legacyRecord.copy(
             diagnosisType = diagnosisType,
-            checklistItems = DiagnosticChecklistCatalog.stateFor(
-                type = diagnosisType,
+            checklistItems = if (has("createdAtMillis")) checklistItems else DiagnosticChecklistCatalog.stateFor(
+                type = DiagnosisType.Advanced,
                 savedItems = checklistItems,
                 legacyAct = legacyRecord
             ),
-            preliminaryConclusion = optString("preliminaryConclusion").ifBlank {
+            preliminaryConclusion = if (has("createdAtMillis")) optString("preliminaryConclusion") else optString("preliminaryConclusion").ifBlank {
                 DiagnosticChecklistCatalog.primaryConclusionFromLegacy(legacyRecord)
             },
             rootCause = optString("rootCause"),
@@ -321,17 +295,14 @@ object ActStorage {
             executorSignature = optJSONArray("executorSignature").toSignatureStrokes(),
             directorSignature = optJSONArray("directorSignature").toSignatureStrokes(),
             signatureDecoding = optString("signatureDecoding"),
-            customerSignatureDecoding = optString("customerSignatureDecoding")
-                .ifBlank { optString("signatureDecoding") },
-            executorSignatureDecoding = optString("executorSignatureDecoding")
-                .ifBlank { optString("signatureDecoding") },
-            directorSignatureDecoding = optString("directorSignatureDecoding")
-                .ifBlank { optString("signatureDecoding") }
+            customerSignatureDecoding = if (has("createdAtMillis")) getString("customerSignatureDecoding") else optString("customerSignatureDecoding").ifBlank { optString("signatureDecoding") },
+            executorSignatureDecoding = if (has("createdAtMillis")) getString("executorSignatureDecoding") else optString("executorSignatureDecoding").ifBlank { optString("signatureDecoding") },
+            directorSignatureDecoding = if (has("createdAtMillis")) getString("directorSignatureDecoding") else optString("directorSignatureDecoding").ifBlank { optString("signatureDecoding") }
         )
     }
 
     private fun List<SignatureStroke>.toJsonArray(): JSONArray = JSONArray().apply {
-        forEach { stroke ->
+        this@toJsonArray.forEach { stroke ->
             put(
                 JSONArray().apply {
                     stroke.points.forEach { point ->
@@ -351,14 +322,14 @@ object ActStorage {
         if (this == null) return emptyList()
         return buildList {
             for (strokeIndex in 0 until length()) {
-                val strokeArray = optJSONArray(strokeIndex) ?: continue
+                val strokeArray = getJSONArray(strokeIndex)
                 val points = buildList {
                     for (pointIndex in 0 until strokeArray.length()) {
-                        val pointObject = strokeArray.optJSONObject(pointIndex) ?: continue
+                        val pointObject = strokeArray.getJSONObject(pointIndex)
                         add(
                             SignaturePoint(
-                                x = pointObject.optDouble("x", 0.0).toFloat(),
-                                y = pointObject.optDouble("y", 0.0).toFloat()
+                                x = pointObject.getDouble("x").toFloat(),
+                                y = pointObject.getDouble("y").toFloat()
                             )
                         )
                     }
@@ -375,62 +346,17 @@ object RequestStorage {
     private const val preferencesName = "saved_requests"
     private const val requestsKey = "requests_json"
 
-    fun loadRequests(context: Context, acts: List<ActRecord>): List<RequestRecord> {
-        val prefs = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        val rawJson = prefs.getString(requestsKey, null).orEmpty()
-        val persisted = if (rawJson.isBlank()) {
-            emptyList()
-        } else {
-            runCatching {
-                val jsonArray = JSONArray(rawJson)
-                buildList {
-                    for (index in 0 until jsonArray.length()) {
-                        val item = jsonArray.optJSONObject(index) ?: continue
-                        add(item.toRequestRecord())
-                    }
-                }
-            }.getOrDefault(emptyList())
-        }
+    fun loadRequests(context: Context, acts: List<ActRecord>): List<RequestRecord> = LocalRepository.read(context).requests
 
-        if (persisted.isNotEmpty()) return persisted
+    fun upsertRequest(context: Context, request: RequestRecord) = LocalRepository.saveRequest(context, request)
 
-        val migrated = acts
-            .groupBy { it.requestId }
-            .mapNotNull { (_, requestActs) -> requestActs.firstOrNull()?.toRequestRecord() }
-            .sortedByDescending { it.id }
+    fun deleteRequest(context: Context, requestId: Long) = LocalRepository.deleteRequest(context, requestId)
 
-        if (migrated.isNotEmpty()) {
-            saveRequests(context, migrated)
-        }
-
-        return migrated
-    }
-
-    fun upsertRequest(context: Context, request: RequestRecord) {
-        val updated = loadRequests(context, ActStorage.loadActs(context))
-            .filterNot { it.id == request.id }
-            .toMutableList()
-            .apply { add(0, request) }
-        saveRequests(context, updated)
-        ActStorage.rememberSequence(context, request.requestNumber)
-    }
-
-    fun deleteRequest(context: Context, requestId: Long) {
-        val updated = loadRequests(context, ActStorage.loadActs(context)).filterNot { it.id == requestId }
-        saveRequests(context, updated)
-    }
-
-    private fun saveRequests(context: Context, requests: List<RequestRecord>) {
-        val jsonArray = JSONArray()
-        requests.forEach { request -> jsonArray.put(request.toJson()) }
-        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .edit()
-            .putString(requestsKey, jsonArray.toString())
-            .apply()
-    }
-
-    private fun RequestRecord.toJson(): JSONObject = JSONObject().apply {
+    internal fun RequestRecord.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
+        put("createdAtMillis", createdAtMillis)
+        put("equipmentId", equipmentId)
+        put("reservedSequence", reservedSequence)
         put("requestNumber", requestNumber)
         put("createdAt", createdAt)
         put("date", date)
@@ -454,8 +380,11 @@ object RequestStorage {
         put("serialNumber", serialNumber)
     }
 
-    private fun JSONObject.toRequestRecord(): RequestRecord = RequestRecord(
-        id = optLong("id"),
+    internal fun JSONObject.toRequestRecord(): RequestRecord = RequestRecord(
+        id = getLong("id"),
+        reservedSequence = optInt("reservedSequence", 0),
+        createdAtMillis = if (has("createdAtMillis")) getLong("createdAtMillis") else LocalRules.legacyTime(optString("createdAt").ifBlank { optString("date") }),
+        equipmentId = if (has("createdAtMillis")) getString("equipmentId") else optString("equipmentId").ifBlank { "legacy-equipment-${getLong("id")}" },
         requestNumber = optString("requestNumber"),
         createdAt = optString("createdAt"),
         date = optString("date"),
@@ -480,8 +409,10 @@ object RequestStorage {
     )
 }
 
-private fun ActRecord.toRequestRecord(): RequestRecord = RequestRecord(
+internal fun ActRecord.toRequestRecord(): RequestRecord = RequestRecord(
     id = requestId,
+    createdAtMillis = createdAtMillis,
+    equipmentId = equipmentId,
     requestNumber = requestNumber,
     createdAt = createdAt,
     date = date,

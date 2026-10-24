@@ -3,6 +3,8 @@ package com.example.dguactapp
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -65,13 +67,17 @@ object ActPdfGenerator {
         }
 
         val suffix = if (mode == PdfMode.Blank) "blank" else "filled"
-        val fileName = "${act.documentType.pdfFilePrefix()}_${act.requestNumber.ifBlank { act.id.toString() }}_$suffix.pdf"
+        val fileName = "${act.documentType.pdfFilePrefix()}_${act.id}_v${act.revision}_${suffix}_${java.util.UUID.randomUUID()}.pdf"
             .replace("[^a-zA-Z0-9а-яА-Я._-]".toRegex(), "_")
         val outputFile = File(pdfDirectory, fileName)
 
+        val temporary = File(pdfDirectory, fileName + ".pending")
         val document = PdfDocument()
+        var activePage: PdfDocument.Page? = null
+        try {
         var pageNumber = 1
         var page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+        activePage = page
         var canvas = page.canvas
 
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -99,8 +105,10 @@ object ActPdfGenerator {
 
         fun newPage() {
             document.finishPage(page)
+            activePage = null
             pageNumber += 1
             page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+            activePage = page
             canvas = page.canvas
             y = margin
         }
@@ -121,41 +129,8 @@ object ActPdfGenerator {
             y += paint.fontMetrics.descent + 2f
         }
 
-        fun wrapText(text: String, paint: Paint): List<String> {
-            val maxWidth = pageWidth - margin * 2
-            val words = text.trim().split(Regex("\\s+"))
-            if (words.isEmpty()) return emptyList()
-            val lines = mutableListOf<String>()
-            var current = ""
-
-            fun pushWord(word: String) {
-                val candidate = if (current.isBlank()) word else "$current $word"
-                if (paint.measureText(candidate) <= maxWidth) {
-                    current = candidate
-                } else {
-                    if (current.isNotBlank()) lines += current
-                    if (paint.measureText(word) <= maxWidth) {
-                        current = word
-                    } else {
-                        var chunk = ""
-                        word.forEach { char ->
-                            val probe = "$chunk$char"
-                            if (paint.measureText(probe) <= maxWidth) {
-                                chunk = probe
-                            } else {
-                                if (chunk.isNotBlank()) lines += chunk
-                                chunk = char.toString()
-                            }
-                        }
-                        current = chunk
-                    }
-                }
-            }
-
-            words.forEach(::pushWord)
-            if (current.isNotBlank()) lines += current
-            return lines
-        }
+        fun wrapText(text: String, paint: Paint): List<String> =
+            LocalRules.wrap(text, pageWidth - margin * 2) { paint.measureText(it) }
 
         fun drawParagraph(text: String, paint: Paint = bodyPaint, after: Float = 4f) {
             if (text.isBlank()) return
@@ -185,25 +160,29 @@ object ActPdfGenerator {
 
         fun drawSignatureBlock(title: String, signature: List<SignatureStroke>, decoding: String) {
             val boxHeight = 74f
+            ensureSpace(boxHeight + 60f + lineHeight(bodyPaint))
             drawLine(title, bodyPaint)
-            ensureSpace(boxHeight + 26f)
             val rect = RectF(margin, y + 2f, pageWidth - margin, y + 2f + boxHeight)
             canvas.drawRect(rect, linePaint)
             if (mode == PdfMode.Filled) {
                 val bitmap = signatureToBitmap(signature, (rect.width() - 12f).toInt(), (rect.height() - 12f).toInt())
                 if (bitmap != null) {
                     canvas.drawBitmap(bitmap, rect.left + 6f, rect.top + 6f, null)
+                    bitmap.recycle()
                 }
             }
             y = rect.bottom + 14f
+            ensureSpace(12f)
             canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
             y += 12f
-            drawLine(if (decoding.isBlank()) "(подпись / расшифровка)" else "(подпись / $decoding)", smallPaint)
+            drawLine(if (mode == PdfMode.Blank || decoding.isBlank()) "(подпись / расшифровка)" else "(подпись / $decoding)", smallPaint)
             y += 4f
         }
 
         fun drawSharedHeader(title: String, subtitle: String? = null) {
-            drawLine(title, titlePaint)
+            drawLine("ДГУ Ямал", titlePaint)
+            drawParagraph(title, sectionPaint)
+            if (mode == PdfMode.Filled) drawParagraph("Заявка ${act.requestNumber} · ${act.date} · версия ${act.revision}", smallPaint)
             if (mode == PdfMode.Blank) {
                 drawLine("Пустой бланк для ручного заполнения", smallPaint)
             } else if (!subtitle.isNullOrBlank()) {
@@ -215,7 +194,11 @@ object ActPdfGenerator {
         fun drawBaseInfoSections(documentType: DocumentType) {
             drawSection("Основные сведения")
             drawKeyValue("Номер заявки", act.requestNumber)
-            drawKeyValue("Дата создания", act.createdAt)
+            drawKeyValue("Дата создания акта", act.createdAt)
+            drawKeyValue("Дата документа", act.date)
+            drawKeyValue("Заказчик", act.customer)
+            drawKeyValue("Телефон", act.phone)
+            drawKeyValue("Адрес заказчика", act.customerAddress)
             drawSection("Исполнитель")
             drawKeyValue("Реквизиты", executorRequisites, blankLines = 3)
             drawSection("Данные заказчика")
@@ -249,56 +232,56 @@ object ActPdfGenerator {
             drawKeyValue("Телефон представителя заказчика", act.customerRepresentativePhone)
         }
 
-        fun drawAcceptanceEquipmentTable() {
-            val tableLeft = margin
-            val tableRight = pageWidth - margin
-            val headerHeight = 22f
-            val rowHeight = 34f
-            val tableTop = y + 4f
-            val width = tableRight - tableLeft
-            val col1 = tableLeft + width * 0.58f
-            val col2 = tableLeft + width * 0.70f
-            val tableBottom = tableTop + headerHeight + rowHeight
-
-            ensureSpace(headerHeight + rowHeight + 18f)
-            canvas.drawRect(tableLeft, tableTop, tableRight, tableBottom, linePaint)
-            canvas.drawLine(tableLeft, tableTop + headerHeight, tableRight, tableTop + headerHeight, linePaint)
-            canvas.drawLine(col1, tableTop, col1, tableBottom, linePaint)
-            canvas.drawLine(col2, tableTop, col2, tableBottom, linePaint)
-
-            canvas.drawText("Наименование и серийный номер", tableLeft + 6f, tableTop + 15f, smallPaint)
-            canvas.drawText("Количество", col1 + 6f, tableTop + 15f, smallPaint)
-            canvas.drawText("Состояние", col2 + 6f, tableTop + 15f, smallPaint)
-
-            val equipmentDescription = buildString {
-                append(act.equipmentName.ifBlank { "Не заполнено" })
-                val details = listOf(act.brand, act.model).filter { it.isNotBlank() }.joinToString(" / ")
-                if (details.isNotBlank()) {
-                    append(" (")
-                    append(details)
-                    append(")")
-                }
+        fun drawDataTable(headers: List<String>, rows: List<List<String>>, fractions: List<Float>) {
+            val left = margin
+            val width = pageWidth - margin * 2
+            val widths = fractions.map { width * it }
+            val x = listOf(left) + widths.runningFold(left) { acc, value -> acc + value }.drop(1)
+            val lh = lineHeight(bodyPaint)
+            val headerLines = headers.mapIndexed { index, text -> LocalRules.wrap(text, widths[index] - 12f) { smallPaint.measureText(it) } }
+            val headerHeight = headerLines.maxOf { it.size } * lineHeight(smallPaint) + 12f
+            var headerPage = -1
+            rows.forEach { values ->
+                val lines = values.mapIndexed { index, text -> LocalRules.wrap(text, widths[index] - 12f) { bodyPaint.measureText(it) } }
+                val totalRows = lines.maxOf { it.size }
+                var offset = 0
+                do {
+                    // Check BEFORE all coordinates. A break also requires a fresh header.
+                    if (y + (if (headerPage != pageNumber) headerHeight else 0f) + lh + 24f > pageHeight - margin) newPage()
+                    if (headerPage != pageNumber) {
+                        val top = y + 4f
+                        val bottom = top + headerHeight
+                        canvas.drawRect(left, top, left + width, bottom, linePaint)
+                        x.drop(1).dropLast(1).forEach { canvas.drawLine(it, top, it, bottom, linePaint) }
+                        headerLines.forEachIndexed { column, header -> header.forEachIndexed { row, text ->
+                            canvas.drawText(text, x[column] + 6f, top + 6f - smallPaint.fontMetrics.ascent + row * lineHeight(smallPaint), smallPaint)
+                        } }
+                        y = bottom
+                        headerPage = pageNumber
+                    }
+                    val count = minOf(totalRows - offset, LocalRules.tableRowsThatFit(y, pageHeight.toFloat(), margin, 0f, lh))
+                    require(count > 0) { "Строка таблицы не помещается на страницу" }
+                    val top = y
+                    val bottom = top + count * lh + 12f
+                    canvas.drawRect(left, top, left + width, bottom, linePaint)
+                    x.drop(1).dropLast(1).forEach { canvas.drawLine(it, top, it, bottom, linePaint) }
+                    lines.forEachIndexed { column, body -> body.drop(offset).take(count).forEachIndexed { row, text ->
+                        canvas.drawText(text, x[column] + 6f, top + 6f - bodyPaint.fontMetrics.ascent + row * lh, bodyPaint)
+                    } }
+                    y = bottom
+                    offset += count
+                    if (offset < totalRows) newPage()
+                } while (offset < totalRows)
             }
-            canvas.drawText(
-                "$equipmentDescription, S/N: ${act.serialNumber.ifBlank { "Не заполнено" }}".take(62),
-                tableLeft + 6f,
-                tableTop + headerHeight + 20f,
-                bodyPaint
-            )
-            canvas.drawText(
-                "1",
-                col1 + 6f,
-                tableTop + headerHeight + 20f,
-                bodyPaint
-            )
-            canvas.drawText(
-                act.equipmentTransferState.ifBlank { "Не заполнено" },
-                col2 + 6f,
-                tableTop + headerHeight + 20f,
-                bodyPaint
-            )
+            y += 10f
+        }
 
-            y = tableBottom + 10f
+        fun drawAcceptanceEquipmentTable() {
+            val values = if (mode == PdfMode.Blank) listOf("", "", "") else listOf(
+                listOf(act.equipmentName, act.brand, act.model).filter { it.isNotBlank() }.joinToString(" / ") +
+                    "\nS/N: " + act.serialNumber.ifBlank { "Не заполнено" },
+                "1", act.equipmentTransferState.ifBlank { "Не заполнено" })
+            drawDataTable(listOf("Наименование и серийный номер", "Кол-во", "Состояние"), listOf(values), listOf(.57f, .13f, .30f))
         }
 
         drawSharedHeader(
@@ -318,24 +301,18 @@ object ActPdfGenerator {
 
                 if (mode == PdfMode.Filled && act.checklistItems.isNotEmpty()) {
                     drawLine("Данные формы:", sectionPaint)
-                    act.checklistItems.forEachIndexed { index, item ->
-                        val status = buildString {
-                            append(if (item.checked) "Проверено" else "Не проверено")
-                            append(", ")
-                            append(if (item.faulty) "Есть замечания" else "Без замечаний")
-                        }
-                        drawParagraph("${index + 1}. ${item.title}: $status", smallPaint, after = 2f)
-                        if (item.comment.isNotBlank()) {
-                            drawParagraph("Комментарий: ${item.comment}", smallPaint, after = 2f)
-                        }
-                    }
+                    drawDataTable(listOf("Проверка", "Результат", "Комментарий"), act.checklistItems.mapIndexed { index, item ->
+                        listOf("${index + 1}. ${item.title}",
+                            (if (item.checked) "Проверено" else "Не проверено") + ", " + (if (item.faulty) "Есть замечания" else "Без замечаний"),
+                            item.comment)
+                    }, listOf(.38f, .27f, .35f))
                     y += 4f
                 }
 
                 drawKeyValue("Предварительное заключение", act.preliminaryConclusion, blankLines = 3)
                 if (mode == PdfMode.Filled && act.diagnosisType == DiagnosisType.Advanced) {
                     drawKeyValue("Конкретная причина неисправности", act.rootCause, blankLines = 2)
-                    drawKeyValue("Перечень требуемых работ", act.requiredWorks, blankLines = 2)
+                    drawDataTable(listOf("Перечень требуемых работ"), listOf(listOf(act.requiredWorks.ifBlank { "Не заполнено" })), listOf(1f))
                 } else if (mode == PdfMode.Blank) {
                     drawKeyValue("Конкретная причина неисправности", "", blankLines = 2)
                     drawKeyValue("Перечень требуемых работ", "", blankLines = 2)
@@ -394,33 +371,59 @@ object ActPdfGenerator {
             act.directorSignatureDecoding.ifBlank { act.signatureDecoding }
         )
 
-        if (mode == PdfMode.Filled && act.photos.isNotEmpty()) {
+        if (mode == PdfMode.Filled) {
             act.photos.forEachIndexed { index, photo ->
-                val bitmap = BitmapFactory.decodeFile(photo.filePath) ?: return@forEachIndexed
-                val caption = "Фотография ${index + 1}"
-                val availableWidth = pageWidth - margin * 2
-                val imageTopOffset = 8f
-                val maxImageHeight = pageHeight - margin * 2 - 40f
-                val scale = minOf(availableWidth / bitmap.width, maxImageHeight / bitmap.height)
-                val targetWidth = bitmap.width * scale
-                val targetHeight = bitmap.height * scale
-
-                ensureSpace(20f + imageTopOffset + targetHeight + blockGap)
-                drawLine(caption, sectionPaint)
-                val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth.toInt(), targetHeight.toInt(), true)
-                canvas.drawBitmap(scaled, margin, y + imageTopOffset, null)
-                y += imageTopOffset + targetHeight + blockGap
-                if (scaled != bitmap) scaled.recycle()
-                bitmap.recycle()
+                val source = File(photo.filePath)
+                require(source.isFile && source.length() > 0) { "Оригинал фотографии ${index + 1} недоступен" }
+                val bitmap = decodePhoto(source)
+                try {
+                    newPage()
+                    drawParagraph("ДГУ Ямал · ${act.requestNumber} · ${act.documentType.title}", smallPaint)
+                    drawLine("Фотография ${index + 1}", sectionPaint)
+                    val availableWidth = pageWidth - margin * 2
+                    val availableHeight = pageHeight - margin - y - 8f
+                    val scale = minOf(availableWidth / bitmap.width, availableHeight / bitmap.height)
+                    val width = bitmap.width * scale
+                    val height = bitmap.height * scale
+                    canvas.drawBitmap(bitmap, null, RectF(margin + (availableWidth - width) / 2, y + 4f,
+                        margin + (availableWidth + width) / 2, y + 4f + height), null)
+                } finally { bitmap.recycle() }
             }
         }
 
         document.finishPage(page)
-        FileOutputStream(outputFile).use { output ->
-            document.writeTo(output)
-        }
-        document.close()
+        activePage = null
+        FileOutputStream(temporary).use { output -> document.writeTo(output); output.fd.sync() }
+        require(!outputFile.exists() && temporary.renameTo(outputFile)) { "Не удалось сохранить PDF" }
         outputFile
+        } finally {
+            activePage?.let { document.finishPage(it) }
+            document.close()
+            temporary.delete()
+        }
+    }
+
+    private fun decodePhoto(file: File): Bitmap {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Формат фотографии не распознан" }
+        var sample = 1
+        while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+        val source = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: throw IOException("Фотографию не удалось декодировать")
+        try {
+            val exif = ExifInterface(file.path)
+            val matrix = Matrix()
+            if (exif.isFlipped) matrix.postScale(-1f, 1f)
+            matrix.postRotate(exif.rotationDegrees.toFloat())
+            if (matrix.isIdentity) return source
+            val oriented = Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+            if (oriented !== source) source.recycle()
+            return oriented
+        } catch (error: OutOfMemoryError) {
+            source.recycle()
+            throw IOException("Недостаточно памяти для фотографии; оригинал сохранён", error)
+        } catch (error: Exception) { source.recycle(); throw error }
     }
 
     private fun signatureToBitmap(signature: List<SignatureStroke>, width: Int, height: Int): Bitmap? {

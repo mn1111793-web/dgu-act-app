@@ -22,3 +22,14 @@ enum class ActStatus(val storageValue: String, val title: String) {
             values().firstOrNull { it.storageValue == value } ?: Draft
     }
 }
+
+internal enum class EquipmentTransferState(val value: String) {
+    Working("в рабочем состоянии"),
+    NotWorking("в нерабочем состоянии"),
+    PartiallyWorking("частично в рабочем состоянии");
+
+    companion object {
+        fun fromValue(value: String): EquipmentTransferState =
+            values().firstOrNull { it.value == value } ?: Working
+    }
+}

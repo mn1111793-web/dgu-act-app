@@ -212,6 +212,20 @@ fun main() {
         check(reqXml.readText()==xmlBefore[0] && actXml.readText()==xmlBefore[1])
         rejected { LocalRepository.saveDocument(c,reviewAct(400,reviewRequest(4).copy(requestNumber="LEGACY-SAME")),reviewRequest(4).copy(requestNumber="LEGACY-SAME"),"") }
     }
+
+    reviewCase("API24 canonical photo confinement rejects sibling-prefix, parent traversal and symlink escapes") {
+        val fixture = File(System.getenv("DGU_CHECK_FIXTURES") ?: error("fixture root required"), "field-paths-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val owner = File(fixture, "act_12").apply { mkdirs() }
+        val own = File(owner, "original.png").apply { writeBytes(fixturePng(1,2,3)) }
+        val sibling = File(fixture, "act_123").apply { mkdirs() }
+        val other = File(sibling, "original.png").apply { writeBytes(fixturePng(4,5,6)) }
+        check(LocalRules.isWithinDirectory(own, owner))
+        check(!LocalRules.isWithinDirectory(other, owner))
+        check(!LocalRules.isWithinDirectory(File(owner, "../act_123/original.png"), owner))
+        val symlink = File(owner, "foreign.png")
+        Files.createSymbolicLink(symlink.toPath(), other.toPath())
+        check(!LocalRules.isWithinDirectory(symlink, owner))
+    }
     println("REVIEW RESULTS passed=$reviewPassed failed=$reviewFailed; JVM synthetic only")
     if (reviewFailed > 0) kotlin.system.exitProcess(1)
 }

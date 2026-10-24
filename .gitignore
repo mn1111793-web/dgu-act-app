@@ -1,3 +1,19 @@
 # Local source checks only; no Android build artifacts are required for this stage.
 /tools/source-check/output/
 /tools/source-check/output-*/
+
+# Local toolchain, secrets and build artifacts never belong in source publication.
+.gradle/
+**/build/
+local.properties
+*.keystore
+*.jks
+*.apk
+*.aab
+.local-tools/
+
+# Credentials remain outside source trees.
+.env
+.env.*
+*.p12
+*.key

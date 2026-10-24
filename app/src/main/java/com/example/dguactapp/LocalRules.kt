@@ -4,9 +4,18 @@ import java.text.SimpleDateFormat
 import java.text.ParsePosition
 import java.util.Locale
 import java.util.UUID
+import java.io.File
 
 /** No Android dependency: ordering and identifiers can be checked on a plain JVM. */
 object LocalRules {
+    /** API 24 compatible, segment-aware containment; canonicalization rejects symlink/.. escapes. */
+    fun isWithinDirectory(candidate: File, directory: File): Boolean {
+        val path = candidate.canonicalPath
+        val root = directory.canonicalPath
+        val prefix = if (root.endsWith(File.separator)) root else root + File.separator
+        return path == root || path.startsWith(prefix)
+    }
+
     fun newId(): Long = UUID.randomUUID().mostSignificantBits.and(Long.MAX_VALUE).let { if (it == 0L) newId() else it }
 
     fun legacyTime(value: String): Long {

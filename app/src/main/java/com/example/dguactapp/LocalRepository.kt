@@ -230,14 +230,14 @@ object LocalRepository {
         act.photos.forEach { photo ->
             val path = File(photo.filePath).canonicalFile
             val ownedPath = lineage.any { ownerId ->
-                path.toPath().startsWith(File(context.filesDir,
-                    "act_photos/request_${act.requestId}/equipment_${act.equipmentId}/act_$ownerId").canonicalFile.toPath())
+                LocalRules.isWithinDirectory(path, File(context.filesDir,
+                    "act_photos/request_${act.requestId}/equipment_${act.equipmentId}/act_$ownerId"))
             }
             val legacyReference = before.acts.any { previous -> previous.id in lineage &&
                 previous.requestId == act.requestId && previous.equipmentId == act.equipmentId &&
                 previous.photos.any { it.filePath == photo.filePath } }
             require(ownedPath || legacyReference) { "Фото не принадлежит этому акту или его предыдущей версии" }
-            require(path.toPath().startsWith(File(context.filesDir, "act_photos").canonicalFile.toPath()))
+            require(LocalRules.isWithinDirectory(path, File(context.filesDir, "act_photos")))
             require(path.isFile && path.length() > 0) { "Не сохранён оригинал фотографии" }
         }
         if (act.supersedesId != 0L) {

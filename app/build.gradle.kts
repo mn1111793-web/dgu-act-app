@@ -20,7 +20,26 @@ android {
         }
     }
 
+    // Dedicated offline tablet test build. Production debug/release IDs and signing stay unchanged.
+    signingConfigs {
+        create("fieldTest") {
+            storeFile = providers.environmentVariable("DGU_TEST_KEYSTORE").orNull?.let { file(it) }
+            storePassword = providers.environmentVariable("DGU_TEST_STORE_PASSWORD").orNull
+            keyAlias = "dgu-field-test"
+            keyPassword = providers.environmentVariable("DGU_TEST_KEY_PASSWORD").orNull
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    }
+
     buildTypes {
+        create("fieldTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".test"
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("fieldTest")
+            matchingFallbacks += listOf("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -76,3 +95,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// fieldTest intentionally excludes debug-only preview/testing tooling dependencies.

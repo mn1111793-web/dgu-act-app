@@ -129,7 +129,19 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    DguActApp()
+                    if (packageName == "com.example.dguactapp.test") {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Text(
+                                "ТЕСТ • только вымышленные данные",
+                                modifier = Modifier.fillMaxWidth().background(Color(0xFFF9C846)).padding(8.dp),
+                                color = Color(0xFF123F56),
+                                fontWeight = FontWeight.Bold
+                            )
+                            androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) { DguActApp() }
+                        }
+                    } else {
+                        DguActApp()
+                    }
                 }
             }
         }

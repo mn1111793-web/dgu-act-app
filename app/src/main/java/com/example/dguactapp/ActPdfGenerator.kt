@@ -67,7 +67,8 @@ object ActPdfGenerator {
         }
 
         val suffix = if (mode == PdfMode.Blank) "blank" else "filled"
-        val fileName = "${act.documentType.pdfFilePrefix()}_${act.id}_v${act.revision}_${suffix}_${java.util.UUID.randomUUID()}.pdf"
+        val testPrefix = if (context.packageName == "com.example.dguactapp.test") "TEST_" else ""
+        val fileName = "${testPrefix}${act.documentType.pdfFilePrefix()}_${act.id}_v${act.revision}_${suffix}_${java.util.UUID.randomUUID()}.pdf"
             .replace("[^a-zA-Z0-9а-яА-Я._-]".toRegex(), "_")
         val outputFile = File(pdfDirectory, fileName)
 

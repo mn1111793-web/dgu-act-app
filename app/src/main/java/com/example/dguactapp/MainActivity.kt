@@ -154,6 +154,11 @@ private fun DguActApp() {
     val savedActs = remember { androidx.compose.runtime.mutableStateListOf<ActRecord>() }
     val savedRequests = remember { androidx.compose.runtime.mutableStateListOf<RequestRecord>() }
 
+    var currentScreen by rememberSaveable { mutableStateOf(AppScreen.Start.name) }
+    var selectedActId by rememberSaveable { mutableLongStateOf(-1L) }
+    var selectedRequestId by rememberSaveable { mutableLongStateOf(-1L) }
+    var requestedDocumentType by rememberSaveable { mutableStateOf(DocumentType.TransferAcceptanceAct.storageValue) }
+    var pendingCommitActId by rememberSaveable { mutableLongStateOf(-1L) }
     var storageError by remember { mutableStateOf<String?>(null) }
     var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -164,7 +169,19 @@ private fun DguActApp() {
         }.onFailure { storageError = "Данные не прочитаны. Запись заблокирована: ${it.message}" }
     }
     if (!loaded) {
-        Text(storageError ?: "Чтение данных…", modifier = Modifier.padding(24.dp))
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text(storageError ?: "Чтение данных…")
+            if (storageError != null) Button(onClick = {
+                runCatching { LocalRepository.read(context) }.onSuccess { snapshot ->
+                    savedActs.clear(); savedActs.addAll(snapshot.acts)
+                    savedRequests.clear(); savedRequests.addAll(snapshot.requests)
+                    snapshot.acts.firstOrNull { it.id == pendingCommitActId }?.let {
+                        selectedActId = it.id; selectedRequestId = it.requestId; currentScreen = AppScreen.ActDetails.name
+                    }
+                    pendingCommitActId = -1L; storageError = null; loaded = true
+                }.onFailure { storageError = "Повторное чтение не выполнено: ${it.message}" }
+            }) { Text("Перечитать сохранённое") }
+        }
         return
     }
     fun handleStorageFailure(error: Throwable) {
@@ -176,10 +193,6 @@ private fun DguActApp() {
     }
     fun operation(action: () -> Unit): Boolean = loaded && runCatching(action).onFailure(::handleStorageFailure).isSuccess
 
-    var currentScreen by rememberSaveable { mutableStateOf(AppScreen.Start.name) }
-    var selectedActId by rememberSaveable { mutableLongStateOf(-1L) }
-    var selectedRequestId by rememberSaveable { mutableLongStateOf(-1L) }
-    var requestedDocumentType by rememberSaveable { mutableStateOf(DocumentType.TransferAcceptanceAct.storageValue) }
 
     val selectedAct = savedActs.firstOrNull { it.id == selectedActId }
     val selectedRequest = savedRequests.firstOrNull { it.id == selectedRequestId }
@@ -254,9 +267,11 @@ private fun DguActApp() {
             },
             onSaveClick = { act, request, correction ->
                 check(loaded) { "Нужно перечитать данные после неопределённого результата" }
+                pendingCommitActId = act.id
                 val snapshot = try {
                     LocalRepository.saveDocument(context, act, request, draftKey, correction)
                 } catch (error: Exception) { handleStorageFailure(error); throw error }
+                pendingCommitActId = -1L
                 savedRequests.clear(); savedRequests.addAll(snapshot.requests)
                 savedActs.clear(); savedActs.addAll(snapshot.acts)
                 selectedRequestId = request.id
@@ -439,189 +454,310 @@ fun NewActScreen(
     onSaveClick: (ActRecord, RequestRecord, Boolean) -> Unit = { _, _, _ -> },
     flushDraft: () -> Boolean = { true }
 ) {
+    val importScope = rememberCoroutineScope()
+    val draftSession = LocalActDraftSession.current
+    val restored = draftSession.restored
     val context = LocalContext.current
-    val formActId = rememberSaveable(key = "formActId") { existingAct?.id ?: LocalRules.newId() }
-    val formCreatedAtMillis = rememberSaveable(key = "formCreatedAtMillis") { existingAct?.createdAtMillis ?: System.currentTimeMillis() }
-    val formRequestId = rememberSaveable(key = "formRequestId") { existingRequest?.id ?: existingAct?.requestId ?: LocalRules.newId() }
-    val formEquipmentId = rememberSaveable(key = "formEquipmentId") { existingRequest?.equipmentId ?: existingAct?.equipmentId ?: java.util.UUID.randomUUID().toString() }
+    val formActId = remember(existingAct?.id) {
+        restored?.formActId ?: run { existingAct?.id ?: LocalRules.newId() }
+    }
+    val formCreatedAtMillis = remember(existingAct?.id) {
+        restored?.formCreatedAtMillis ?: run { existingAct?.createdAtMillis ?: System.currentTimeMillis() }
+    }
+    val formRequestId = remember(existingAct?.id) {
+        restored?.formRequestId ?: run { existingRequest?.id ?: existingAct?.requestId ?: LocalRules.newId() }
+    }
+    val formEquipmentId = remember(existingAct?.id) {
+        restored?.formEquipmentId ?: run { existingRequest?.equipmentId ?: existingAct?.equipmentId ?: java.util.UUID.randomUUID().toString() }
+    }
     val today = remember { currentDateDisplay() }
     val requestDatePart = remember { currentDateForRequestNumber() }
     val nextSequence = remember(existingRequest?.id) { existingRequest?.reservedSequence?.takeIf { it > 0 } ?: ActStorage.nextSequence(context, existingActs) }
 
-    var equipmentCode by rememberSaveable(existingAct?.id, key = "equipmentCode") {
+    var equipmentCode by remember(existingAct?.id) {
+        restored?.equipmentCode?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.equipmentCode ?: existingRequest?.equipmentCode.orEmpty())
     }
-    var documentType by rememberSaveable(existingAct?.id, key = "documentType") {
+    }
+    var documentType by remember(existingAct?.id) {
+        restored?.documentType?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.documentType ?: initialDocumentType)
     }
-    var createdAt by rememberSaveable(existingAct?.id, key = "createdAt") {
+    }
+    var createdAt by remember(existingAct?.id) {
+        restored?.createdAt?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(
             existingAct?.createdAt?.ifBlank { today } ?: today
         )
     }
-    var equipmentName by rememberSaveable(existingAct?.id, key = "equipmentName") {
+    }
+    var equipmentName by remember(existingAct?.id) {
+        restored?.equipmentName?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.equipmentName ?: existingRequest?.equipmentName.orEmpty())
     }
-    var date by rememberSaveable(existingAct?.id, key = "date") {
+    }
+    var date by remember(existingAct?.id) {
+        restored?.date?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.date?.ifBlank { today } ?: today)
     }
-    var customer by rememberSaveable(existingAct?.id, key = "customer") {
+    }
+    var customer by remember(existingAct?.id) {
+        restored?.customer?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.customer ?: existingRequest?.customer.orEmpty())
     }
-    var phone by rememberSaveable(existingAct?.id, key = "phone") {
+    }
+    var phone by remember(existingAct?.id) {
+        restored?.phone?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.phone ?: existingRequest?.phone.orEmpty())
     }
-    var customerAddress by rememberSaveable(existingAct?.id, key = "customerAddress") {
+    }
+    var customerAddress by remember(existingAct?.id) {
+        restored?.customerAddress?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.customerAddress ?: existingRequest?.customerAddress.orEmpty())
     }
-    var organizationName by rememberSaveable(existingAct?.id, key = "organizationName") {
+    }
+    var organizationName by remember(existingAct?.id) {
+        restored?.organizationName?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.organizationName ?: existingRequest?.organizationName.orEmpty())
     }
-    var organizationInn by rememberSaveable(existingAct?.id, key = "organizationInn") {
+    }
+    var organizationInn by remember(existingAct?.id) {
+        restored?.organizationInn?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.organizationInn ?: existingRequest?.organizationInn.orEmpty())
     }
-    var organizationOgrn by rememberSaveable(existingAct?.id, key = "organizationOgrn") {
+    }
+    var organizationOgrn by remember(existingAct?.id) {
+        restored?.organizationOgrn?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.organizationOgrn ?: existingRequest?.organizationOgrn.orEmpty())
     }
-    var organizationAddress by rememberSaveable(existingAct?.id, key = "organizationAddress") {
+    }
+    var organizationAddress by remember(existingAct?.id) {
+        restored?.organizationAddress?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.organizationAddress ?: existingRequest?.organizationAddress.orEmpty())
     }
-    var organizationPhone by rememberSaveable(existingAct?.id, key = "organizationPhone") {
+    }
+    var organizationPhone by remember(existingAct?.id) {
+        restored?.organizationPhone?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.organizationPhone ?: existingRequest?.organizationPhone.orEmpty())
     }
-    var organizationEmail by rememberSaveable(existingAct?.id, key = "organizationEmail") {
+    }
+    var organizationEmail by remember(existingAct?.id) {
+        restored?.organizationEmail?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.organizationEmail ?: existingRequest?.organizationEmail.orEmpty())
     }
-    var compilationPlace by rememberSaveable(existingAct?.id, key = "compilationPlace") {
+    }
+    var compilationPlace by remember(existingAct?.id) {
+        restored?.compilationPlace?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.compilationPlace ?: existingRequest?.compilationPlace.orEmpty())
     }
-    var enterpriseCardUri by rememberSaveable(existingAct?.id, key = "enterpriseCardUri") {
+    }
+    var enterpriseCardUri by remember(existingAct?.id) {
+        restored?.enterpriseCardUri?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingRequest?.enterpriseCardUri.orEmpty())
     }
-    var enterpriseCardFileName by rememberSaveable(existingAct?.id, key = "enterpriseCardFileName") { mutableStateOf("") }
-    var enterpriseCardDetectedName by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedName") { mutableStateOf("") }
-    var enterpriseCardDetectedInn by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedInn") { mutableStateOf("") }
-    var enterpriseCardDetectedOgrn by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedOgrn") { mutableStateOf("") }
-    var enterpriseCardDetectedAddress by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedAddress") { mutableStateOf("") }
-    var enterpriseCardDetectedPhone by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedPhone") { mutableStateOf("") }
-    var enterpriseCardDetectedEmail by rememberSaveable(existingAct?.id, key = "enterpriseCardDetectedEmail") { mutableStateOf("") }
-    var showEnterpriseCardDetectedDialog by rememberSaveable(existingAct?.id, key = "showEnterpriseCardDetectedDialog") { mutableStateOf(false) }
-    var brandSelection by rememberSaveable(existingAct?.id, key = "brandSelection") {
+    }
+    var enterpriseCardFileName by remember(existingAct?.id) {
+        restored?.enterpriseCardFileName?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var enterpriseCardDetectedName by remember(existingAct?.id) {
+        restored?.enterpriseCardDetectedName?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var enterpriseCardDetectedInn by remember(existingAct?.id) {
+        restored?.enterpriseCardDetectedInn?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var enterpriseCardDetectedOgrn by remember(existingAct?.id) {
+        restored?.enterpriseCardDetectedOgrn?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var enterpriseCardDetectedAddress by remember(existingAct?.id) {
+        restored?.enterpriseCardDetectedAddress?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var enterpriseCardDetectedPhone by remember(existingAct?.id) {
+        restored?.enterpriseCardDetectedPhone?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var enterpriseCardDetectedEmail by remember(existingAct?.id) {
+        restored?.enterpriseCardDetectedEmail?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var showEnterpriseCardDetectedDialog by remember(existingAct?.id) {
+        restored?.showEnterpriseCardDetectedDialog?.let { mutableStateOf(it) } ?: run { mutableStateOf(false) }
+    }
+    var brandSelection by remember(existingAct?.id) {
+        restored?.brandSelection?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.brand ?: existingRequest?.brand.orEmpty())
     }
-    var customBrand by rememberSaveable(existingAct?.id, key = "customBrand") { mutableStateOf("") }
-    var modelSelection by rememberSaveable(existingAct?.id, key = "modelSelection") {
+    }
+    var customBrand by remember(existingAct?.id) {
+        restored?.customBrand?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var modelSelection by remember(existingAct?.id) {
+        restored?.modelSelection?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.model ?: existingRequest?.model.orEmpty())
     }
-    var customModel by rememberSaveable(existingAct?.id, key = "customModel") { mutableStateOf("") }
-    var serialNumber by rememberSaveable(existingAct?.id, key = "serialNumber") {
+    }
+    var customModel by remember(existingAct?.id) {
+        restored?.customModel?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var serialNumber by remember(existingAct?.id) {
+        restored?.serialNumber?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.serialNumber ?: existingRequest?.serialNumber.orEmpty())
     }
-    var operatingTime by rememberSaveable(existingAct?.id, key = "operatingTime") {
+    }
+    var operatingTime by remember(existingAct?.id) {
+        restored?.operatingTime?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.operatingTime.orEmpty())
     }
-    var customerRepresentative by rememberSaveable(existingAct?.id, key = "customerRepresentative") {
+    }
+    var customerRepresentative by remember(existingAct?.id) {
+        restored?.customerRepresentative?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(
             existingAct?.customerRepresentative ?: existingRequest?.customerRepresentative.orEmpty()
         )
     }
-    var customerRepresentativePhone by rememberSaveable(existingAct?.id, key = "customerRepresentativePhone") {
+    }
+    var customerRepresentativePhone by remember(existingAct?.id) {
+        restored?.customerRepresentativePhone?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.customerRepresentativePhone ?: existingRequest?.customerRepresentativePhone.orEmpty())
     }
-    var malfunctionDescription by rememberSaveable(existingAct?.id, key = "malfunctionDescription") {
+    }
+    var malfunctionDescription by remember(existingAct?.id) {
+        restored?.malfunctionDescription?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.malfunctionDescription.orEmpty())
     }
-    var transferCompleteness by rememberSaveable(existingAct?.id, key = "transferCompleteness") {
+    }
+    var transferCompleteness by remember(existingAct?.id) {
+        restored?.transferCompleteness?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.completeness.orEmpty())
     }
-    var transferExternalCondition by rememberSaveable(existingAct?.id, key = "transferExternalCondition") {
+    }
+    var transferExternalCondition by remember(existingAct?.id) {
+        restored?.transferExternalCondition?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.externalCondition.orEmpty())
     }
-    var diagnosisType by rememberSaveable(existingAct?.id, key = "diagnosisType") {
+    }
+    var diagnosisType by remember(existingAct?.id) {
+        restored?.diagnosisType?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.diagnosisType ?: DiagnosisType.Primary)
     }
-    val checklistItems = rememberSaveable(existingAct?.id, key = "checklistItems", saver = ChecklistStateSaver) {
+    }
+    val checklistItems = remember(existingAct?.id) {
+        restored?.checklistItems?.toMutableStateList() ?: run {
         DiagnosticChecklistCatalog.stateFor(
             type = DiagnosisType.Advanced,
             savedItems = existingAct?.checklistItems.orEmpty(),
             legacyAct = existingAct
         ).toMutableStateList()
     }
-    var preliminaryConclusion by rememberSaveable(existingAct?.id, key = "preliminaryConclusion") {
+    }
+    var preliminaryConclusion by remember(existingAct?.id) {
+        restored?.preliminaryConclusion?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(
             existingAct?.preliminaryConclusion?.ifBlank {
                 DiagnosticChecklistCatalog.primaryConclusionFromLegacy(existingAct)
             }.orEmpty()
         )
     }
-    var rootCause by rememberSaveable(existingAct?.id, key = "rootCause") {
+    }
+    var rootCause by remember(existingAct?.id) {
+        restored?.rootCause?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.rootCause.orEmpty())
     }
-    var requiredWorks by rememberSaveable(existingAct?.id, key = "requiredWorks") {
+    }
+    var requiredWorks by remember(existingAct?.id) {
+        restored?.requiredWorks?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.requiredWorks.orEmpty())
     }
-    var pdfPath by rememberSaveable(existingAct?.id, key = "pdfPath") {
+    }
+    var pdfPath by remember(existingAct?.id) {
+        restored?.pdfPath?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.pdfPath.orEmpty())
     }
-    var comment by rememberSaveable(existingAct?.id, key = "comment") {
+    }
+    var comment by remember(existingAct?.id) {
+        restored?.comment?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.comment.orEmpty())
     }
-    val photos = rememberSaveable(existingAct?.id, key = "photos", saver = ActPhotoListSaver) {
+    }
+    val photos = remember(existingAct?.id) {
+        restored?.photos?.toMutableStateList() ?: run {
         existingAct?.photos.orEmpty().toMutableStateList()
     }
-    var nameplatePhotoId by rememberSaveable(existingAct?.id, key = "nameplatePhotoId") {
+    }
+    var nameplatePhotoId by remember(existingAct?.id) {
+        restored?.nameplatePhotoId?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.nameplatePhotoId.orEmpty())
     }
-    val customerSignatureDraft = rememberSaveable(existingAct?.id, key = "customerSignatureDraft", saver = SignatureStrokeListSaver) {
+    }
+    val customerSignatureDraft = remember(existingAct?.id) {
+        restored?.customerSignatureDraft?.toMutableStateList() ?: run {
         existingAct?.customerSignature.orEmpty().toMutableStateList()
     }
-    val customerSignatureSaved = rememberSaveable(existingAct?.id, key = "customerSignatureSaved", saver = SignatureStrokeListSaver) {
+    }
+    val customerSignatureSaved = remember(existingAct?.id) {
+        restored?.customerSignatureSaved?.toMutableStateList() ?: run {
         existingAct?.customerSignature.orEmpty().toMutableStateList()
     }
-    val executorSignatureDraft = rememberSaveable(existingAct?.id, key = "executorSignatureDraft", saver = SignatureStrokeListSaver) {
+    }
+    val executorSignatureDraft = remember(existingAct?.id) {
+        restored?.executorSignatureDraft?.toMutableStateList() ?: run {
         existingAct?.executorSignature.orEmpty().toMutableStateList()
     }
-    val executorSignatureSaved = rememberSaveable(existingAct?.id, key = "executorSignatureSaved", saver = SignatureStrokeListSaver) {
+    }
+    val executorSignatureSaved = remember(existingAct?.id) {
+        restored?.executorSignatureSaved?.toMutableStateList() ?: run {
         existingAct?.executorSignature.orEmpty().toMutableStateList()
     }
-    val directorSignatureDraft = rememberSaveable(existingAct?.id, key = "directorSignatureDraft", saver = SignatureStrokeListSaver) {
+    }
+    val directorSignatureDraft = remember(existingAct?.id) {
+        restored?.directorSignatureDraft?.toMutableStateList() ?: run {
         existingAct?.directorSignature.orEmpty().toMutableStateList()
     }
-    val directorSignatureSaved = rememberSaveable(existingAct?.id, key = "directorSignatureSaved", saver = SignatureStrokeListSaver) {
+    }
+    val directorSignatureSaved = remember(existingAct?.id) {
+        restored?.directorSignatureSaved?.toMutableStateList() ?: run {
         existingAct?.directorSignature.orEmpty().toMutableStateList()
     }
-    var signatureDecoding by rememberSaveable(existingAct?.id, key = "signatureDecoding") {
+    }
+    var signatureDecoding by remember(existingAct?.id) {
+        restored?.signatureDecoding?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct?.signatureDecoding.orEmpty())
     }
-    var customerSignatureDecoding by rememberSaveable(existingAct?.id, key = "customerSignatureDecoding") {
+    }
+    var customerSignatureDecoding by remember(existingAct?.id) {
+        restored?.customerSignatureDecoding?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(
             existingAct?.customerSignatureDecoding
                 ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
                 .orEmpty()
         )
     }
-    var executorSignatureDecoding by rememberSaveable(existingAct?.id, key = "executorSignatureDecoding") {
+    }
+    var executorSignatureDecoding by remember(existingAct?.id) {
+        restored?.executorSignatureDecoding?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(
             existingAct?.executorSignatureDecoding
                 ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
                 .orEmpty()
         )
     }
-    var directorSignatureDecoding by rememberSaveable(existingAct?.id, key = "directorSignatureDecoding") {
+    }
+    var directorSignatureDecoding by remember(existingAct?.id) {
+        restored?.directorSignatureDecoding?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(
             existingAct?.directorSignatureDecoding
                 ?.ifBlank { existingAct?.signatureDecoding.orEmpty() }
                 .orEmpty()
         )
     }
-    var pendingCameraPath by rememberSaveable(key = "pendingCameraPath") { mutableStateOf("") }
-    var pendingNameplateCameraPath by rememberSaveable(key = "pendingNameplateCameraPath") { mutableStateOf("") }
+    }
+    var pendingCameraPath by remember(existingAct?.id) {
+        restored?.pendingCameraPath?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var pendingNameplateCameraPath by remember(existingAct?.id) {
+        restored?.pendingNameplateCameraPath?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
     var isImportingPhotos by remember { mutableStateOf(false) }
     var isImportingNameplatePhoto by remember { mutableStateOf(false) }
 
-    val nameplatePhoto = remember(photos, nameplatePhotoId) {
-        photos.firstOrNull { it.id == nameplatePhotoId }
-    }
+    val nameplatePhoto = photos.firstOrNull { it.id == nameplatePhotoId }
     val setNameplatePhoto: (ActPhoto) -> Unit = { newPhoto ->
         photos.add(0, newPhoto)
         nameplatePhotoId = newPhoto.id
@@ -629,34 +765,27 @@ fun NewActScreen(
     fun launchCamera(photo: ActPhoto, launcher: androidx.activity.result.ActivityResultLauncher<Uri>) {
         if (!flushDraft()) return
         runCatching {
+            require(LocalRules.isWithinDirectory(java.io.File(photo.filePath), java.io.File(context.filesDir, "act_photos/request_$formRequestId/equipment_$formEquipmentId/act_$formActId")))
             launcher.launch(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", java.io.File(photo.filePath)))
         }.onFailure { Toast.makeText(context, "Не удалось открыть камеру: ${it.message}", Toast.LENGTH_LONG).show() }
     }
-    val takePictureLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        val createdPhoto = pendingCameraPath.takeIf { it.isNotBlank() }?.let { ActPhoto(id = java.io.File(it).nameWithoutExtension, filePath = it) }
-        pendingCameraPath = ""
-        if (success && createdPhoto != null) {
-            PhotoStorage.confirmCameraPhoto(createdPhoto).onSuccess { photos.add(it) }.onFailure {
-                Toast.makeText(context, "Фото не сохранено: ${it.message}", Toast.LENGTH_LONG).show()
+    fun cameraResult(success: Boolean, role: CameraPhotoRole) {
+        val pending = if (role == CameraPhotoRole.NAMEPLATE) pendingNameplateCameraPath else pendingCameraPath
+        runCatching {
+            val result = resolveCameraResult(photos.toList(),nameplatePhotoId,pending,role,success) { photo ->
+                require(LocalRules.isWithinDirectory(java.io.File(photo.filePath),java.io.File(context.filesDir,"act_photos/request_$formRequestId/equipment_$formEquipmentId/act_$formActId"))) { "Путь камеры другой единицы" }
+                PhotoStorage.confirmCameraPhoto(photo).getOrThrow()
             }
-        } else if (createdPhoto != null) {
-            // Cancelled camera originals retained conservatively.
-        }
+            photos.clear();photos.addAll(result.photos);nameplatePhotoId=result.nameplateId
+            if(role==CameraPhotoRole.NAMEPLATE) pendingNameplateCameraPath=result.pendingPath else pendingCameraPath=result.pendingPath
+            flushDraft()
+        }.onFailure { Toast.makeText(context,"Фото не сохранено: ${it.message}",Toast.LENGTH_LONG).show() }
     }
-    val takeNameplatePictureLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        val createdPhoto = pendingNameplateCameraPath.takeIf { it.isNotBlank() }?.let { ActPhoto(id = java.io.File(it).nameWithoutExtension, filePath = it) }
-        pendingNameplateCameraPath = ""
-        if (success && createdPhoto != null) {
-            PhotoStorage.confirmCameraPhoto(createdPhoto).onSuccess { setNameplatePhoto(it) }.onFailure {
-                Toast.makeText(context, "Фото не сохранено: ${it.message}", Toast.LENGTH_LONG).show()
-            }
-        } else if (createdPhoto != null) {
-            // Cancelled camera originals retained conservatively.
-        }
+    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        cameraResult(success,CameraPhotoRole.ATTACHMENT)
+    }
+    val takeNameplatePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        cameraResult(success,CameraPhotoRole.NAMEPLATE)
     }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -681,14 +810,14 @@ fun NewActScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
     ) { uris ->
         isImportingPhotos = false
-        val imported = uris.mapNotNull { uri -> PhotoStorage.importPhotoFromUri(context, uri, formRequestId, formEquipmentId, formActId) }
-        photos.addAll(imported)
-        if (uris.size != imported.size) {
-            Toast.makeText(
-                context,
-                context.getString(R.string.photos_import_error),
-                Toast.LENGTH_SHORT
-            ).show()
+        importScope.launch {
+            isImportingPhotos = true
+            try {
+                val imported = withContext(Dispatchers.IO) { uris.mapNotNull { uri -> PhotoStorage.importPhotoFromUri(context, uri, formRequestId, formEquipmentId, formActId) } }
+                photos.addAll(imported)
+                flushDraft()
+                if (uris.size != imported.size) Toast.makeText(context, context.getString(R.string.photos_import_error), Toast.LENGTH_LONG).show()
+            } finally { isImportingPhotos = false }
         }
     }
     val nameplateCameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -715,31 +844,44 @@ fun NewActScreen(
     ) { uri ->
         isImportingNameplatePhoto = false
         if (uri == null) return@rememberLauncherForActivityResult
-        val importedPhoto = PhotoStorage.importPhotoFromUri(context, uri, formRequestId, formEquipmentId, formActId)
-        if (importedPhoto != null) {
-            setNameplatePhoto(importedPhoto)
-        } else {
-            Toast.makeText(
-                context,
-                context.getString(R.string.photos_import_error),
-                Toast.LENGTH_SHORT
-            ).show()
+        importScope.launch {
+            isImportingNameplatePhoto = true
+            try {
+                val imported = withContext(Dispatchers.IO) { PhotoStorage.importPhotoFromUri(context, uri, formRequestId, formEquipmentId, formActId) }
+                if (imported != null) { setNameplatePhoto(imported); flushDraft() }
+                else Toast.makeText(context, context.getString(R.string.photos_import_error), Toast.LENGTH_LONG).show()
+            } finally { isImportingNameplatePhoto = false }
         }
     }
+    var companyCardBusy by remember { mutableStateOf(false) }
     val enterpriseCardLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
-            enterpriseCardUri = uri.toString()
-            enterpriseCardFileName = resolveFileName(context, uri)
-            val extracted = extractEnterpriseCardData(context, uri)
-            if (extracted != null) {
+        if (uri != null) importScope.launch {
+            companyCardBusy = true
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val fileName = resolveFileName(context, uri)
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { readCardBytes(it) }
+                        ?: error("Нет доступа к выбранной карточке")
+                    val format = companyCardFormat(context.contentResolver.getType(uri).orEmpty(), fileName, bytes)
+                    val content = when (format) {
+                        CompanyCardFormat.PDF -> {
+                            PDFBoxResourceLoader.init(context.applicationContext)
+                            PDDocument.load(bytes).use { PDFTextStripper().getText(it) }
+                        }
+                        CompanyCardFormat.DOCX -> readDocxText(bytes)
+                    }
+                    val extracted = parseEnterpriseCardText(content)
+                        ?: error("Реквизиты не найдены. PDF должен содержать текст; OCR сканов не поддерживается. Поля можно заполнить вручную.")
+                    val persisted = runCatching {
+                        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }.isSuccess
+                    Triple(fileName, extracted, persisted)
+                }
+                enterpriseCardUri = uri.toString()
+                enterpriseCardFileName = result.first
+                val extracted = result.second
                 enterpriseCardDetectedName = extracted.organizationName
                 enterpriseCardDetectedInn = extracted.organizationInn
                 enterpriseCardDetectedOgrn = extracted.organizationOgrn
@@ -747,13 +889,18 @@ fun NewActScreen(
                 enterpriseCardDetectedPhone = extracted.organizationPhone
                 enterpriseCardDetectedEmail = extracted.organizationEmail
                 showEnterpriseCardDetectedDialog = true
-            }
+                flushDraft()
+                if (!result.third) Toast.makeText(context, "Реквизиты прочитаны; постоянный доступ к исходному файлу не предоставлен", Toast.LENGTH_LONG).show()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                Toast.makeText(context, "Карточка не прочитана: ${error.message}", Toast.LENGTH_LONG).show()
+            } finally { companyCardBusy = false }
         }
     }
 
     LaunchedEffect(enterpriseCardUri) {
         if (enterpriseCardUri.isNotBlank() && enterpriseCardFileName.isBlank()) {
-            enterpriseCardFileName = resolveFileName(context, Uri.parse(enterpriseCardUri))
+            enterpriseCardFileName = withContext(Dispatchers.IO) { resolveFileName(context, Uri.parse(enterpriseCardUri)) }
         }
     }
 
@@ -806,19 +953,25 @@ fun NewActScreen(
             ?: existingRequest?.requestNumber?.ifBlank { null }
             ?: if (equipmentCode.isBlank()) "" else "$equipmentCode-$nextSequence-$requestDatePart"
     }
-    var requestNumber by rememberSaveable(existingAct?.id, key = "requestNumber") { mutableStateOf(generatedRequestNumber) }
-    var requestNumberEditedManually by rememberSaveable(existingAct?.id, key = "requestNumberEditedManually") {
+    var requestNumber by remember(existingAct?.id) {
+        restored?.requestNumber?.let { mutableStateOf(it) } ?: run { mutableStateOf(generatedRequestNumber) }
+    }
+    var requestNumberEditedManually by remember(existingAct?.id) {
+        restored?.requestNumberEditedManually?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(existingAct != null || existingRequest?.requestNumber?.isNotBlank() == true)
     }
+    }
     LaunchedEffect(generatedRequestNumber, equipmentCode) {
-        if (!requestNumberEditedManually || requestNumber.isBlank()) {
+        if (restored == null && (!requestNumberEditedManually || requestNumber.isBlank())) {
             requestNumber = generatedRequestNumber
         }
     }
-    var equipmentTransferState by rememberSaveable(existingAct?.id, key = "equipmentTransferState") {
+    var equipmentTransferState by remember(existingAct?.id) {
+        restored?.equipmentTransferState?.let { mutableStateOf(it) } ?: run {
         mutableStateOf(
             EquipmentTransferState.fromValue(existingAct?.equipmentTransferState.orEmpty())
         )
+    }
     }
 
     val resolvedBrand = if (brandSelection == EquipmentCatalog.OTHER_OPTION) customBrand else brandSelection
@@ -827,8 +980,12 @@ fun NewActScreen(
     val isTransferAcceptanceDocument = documentType == DocumentType.TransferAcceptanceAct
     val isAcceptanceDocument = documentType == DocumentType.AcceptanceAct
     val equipmentCorrectionFingerprint = org.json.JSONArray(listOf(existingRequest?.equipmentId, existingRequest?.equipmentCode, existingRequest?.brand, existingRequest?.model, existingRequest?.serialNumber, equipmentCode, resolvedBrand, resolvedModel, serialNumber)).toString()
-    var confirmedEquipmentCorrection by rememberSaveable(key = "confirmedEquipmentCorrection") { mutableStateOf("") }
-    var showEquipmentCorrectionDialog by rememberSaveable(key = "showEquipmentCorrectionDialog") { mutableStateOf(false) }
+    var confirmedEquipmentCorrection by remember(existingAct?.id) {
+        restored?.confirmedEquipmentCorrection?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
+    var showEquipmentCorrectionDialog by remember(existingAct?.id) {
+        restored?.showEquipmentCorrectionDialog?.let { mutableStateOf(it) } ?: run { mutableStateOf(false) }
+    }
     val contentFingerprint = org.json.JSONArray(listOf(
         documentType.storageValue,
         requestNumber,
@@ -866,7 +1023,9 @@ fun NewActScreen(
         customerSignatureDecoding,
         executorSignatureDecoding,
         directorSignatureDecoding)).toString()
-    var signatureBinding by rememberSaveable(key = "signatureBinding") { mutableStateOf("") }
+    var signatureBinding by remember(existingAct?.id) {
+        restored?.signatureBinding?.let { mutableStateOf(it) } ?: run { mutableStateOf("") }
+    }
     fun invalidateChangedSignatures() {
         if (signatureBinding.isNotEmpty() && signatureBinding != contentFingerprint) {
             customerSignatureSaved.clear(); executorSignatureSaved.clear(); directorSignatureSaved.clear()
@@ -915,10 +1074,10 @@ fun NewActScreen(
         }
     }
     val onPickPhotoClick = {
-        isImportingPhotos = true
-        if (flushDraft()) galleryLauncher.launch(
-            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-        )
+        if (flushDraft()) runCatching {
+            galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            isImportingPhotos = true
+        }.onFailure { Toast.makeText(context, "Галерея не открыта: ${it.message}", Toast.LENGTH_LONG).show() }
     }
     val onTakeNameplatePhotoClick = takeNameplate@{
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -934,10 +1093,83 @@ fun NewActScreen(
         }
     }
     val onPickNameplatePhotoClick = {
-        isImportingNameplatePhoto = true
-        if (flushDraft()) nameplateGalleryLauncher.launch(
-            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-        )
+        if (flushDraft()) runCatching {
+            nameplateGalleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            isImportingNameplatePhoto = true
+        }.onFailure { Toast.makeText(context, "Галерея не открыта: ${it.message}", Toast.LENGTH_LONG).show() }
+    }
+    androidx.compose.runtime.SideEffect {
+        draftSession.capture = {
+            ActFormDraft(
+                formActId = formActId,
+                formCreatedAtMillis = formCreatedAtMillis,
+                formRequestId = formRequestId,
+                formEquipmentId = formEquipmentId,
+                equipmentCode = equipmentCode,
+                documentType = documentType,
+                createdAt = createdAt,
+                equipmentName = equipmentName,
+                date = date,
+                customer = customer,
+                phone = phone,
+                customerAddress = customerAddress,
+                organizationName = organizationName,
+                organizationInn = organizationInn,
+                organizationOgrn = organizationOgrn,
+                organizationAddress = organizationAddress,
+                organizationPhone = organizationPhone,
+                organizationEmail = organizationEmail,
+                compilationPlace = compilationPlace,
+                enterpriseCardUri = enterpriseCardUri,
+                enterpriseCardFileName = enterpriseCardFileName,
+                enterpriseCardDetectedName = enterpriseCardDetectedName,
+                enterpriseCardDetectedInn = enterpriseCardDetectedInn,
+                enterpriseCardDetectedOgrn = enterpriseCardDetectedOgrn,
+                enterpriseCardDetectedAddress = enterpriseCardDetectedAddress,
+                enterpriseCardDetectedPhone = enterpriseCardDetectedPhone,
+                enterpriseCardDetectedEmail = enterpriseCardDetectedEmail,
+                showEnterpriseCardDetectedDialog = showEnterpriseCardDetectedDialog,
+                brandSelection = brandSelection,
+                customBrand = customBrand,
+                modelSelection = modelSelection,
+                customModel = customModel,
+                serialNumber = serialNumber,
+                operatingTime = operatingTime,
+                customerRepresentative = customerRepresentative,
+                customerRepresentativePhone = customerRepresentativePhone,
+                malfunctionDescription = malfunctionDescription,
+                transferCompleteness = transferCompleteness,
+                transferExternalCondition = transferExternalCondition,
+                diagnosisType = diagnosisType,
+                checklistItems = checklistItems.toList(),
+                preliminaryConclusion = preliminaryConclusion,
+                rootCause = rootCause,
+                requiredWorks = requiredWorks,
+                pdfPath = pdfPath,
+                comment = comment,
+                photos = photos.toList(),
+                nameplatePhotoId = nameplatePhotoId,
+                customerSignatureDraft = customerSignatureDraft.toList(),
+                customerSignatureSaved = customerSignatureSaved.toList(),
+                executorSignatureDraft = executorSignatureDraft.toList(),
+                executorSignatureSaved = executorSignatureSaved.toList(),
+                directorSignatureDraft = directorSignatureDraft.toList(),
+                directorSignatureSaved = directorSignatureSaved.toList(),
+                signatureDecoding = signatureDecoding,
+                customerSignatureDecoding = customerSignatureDecoding,
+                executorSignatureDecoding = executorSignatureDecoding,
+                directorSignatureDecoding = directorSignatureDecoding,
+                pendingCameraPath = pendingCameraPath,
+                pendingNameplateCameraPath = pendingNameplateCameraPath,
+                requestNumber = requestNumber,
+                requestNumberEditedManually = requestNumberEditedManually,
+                equipmentTransferState = equipmentTransferState,
+                confirmedEquipmentCorrection = confirmedEquipmentCorrection,
+                showEquipmentCorrectionDialog = showEquipmentCorrectionDialog,
+                signatureBinding = signatureBinding,
+                legacyRegistryArchive = restored?.legacyRegistryArchive.orEmpty()
+            )
+        }
     }
     val listState = rememberLazyListState()
 
@@ -987,7 +1219,7 @@ fun NewActScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
+            item(key = "act-section-1") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1010,7 +1242,7 @@ fun NewActScreen(
                     if (!isAcceptanceDocument) {
                         OutlinedButton(
                             onClick = {
-                                if (flushDraft()) enterpriseCardLauncher.launch(
+                                if (!companyCardBusy && flushDraft()) enterpriseCardLauncher.launch(
                                     arrayOf(
                                         "application/pdf",
                                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -1509,7 +1741,7 @@ fun NewActScreen(
                 }
             }
 
-            item {
+            item(key = "act-section-2") {
                 DetailCard(title = stringResource(id = R.string.photos_section_title)) {
                     Text(
                         text = stringResource(id = R.string.photos_section_hint),
@@ -1565,7 +1797,7 @@ fun NewActScreen(
             }
 
             if (isDiagnosticDocument) {
-                item {
+                item(key = "act-section-3") {
                     DetailCard(title = stringResource(id = R.string.diagnosis_type_title)) {
                         Text(
                             text = stringResource(id = R.string.diagnosis_type_hint),
@@ -1595,7 +1827,7 @@ fun NewActScreen(
                     )
                 }
 
-                item {
+                item(key = "act-section-4") {
                     DetailCard(title = stringResource(id = R.string.preliminary_conclusion_title)) {
                         FormTextField(
                             value = preliminaryConclusion,
@@ -1609,7 +1841,7 @@ fun NewActScreen(
             }
 
             if (isDiagnosticDocument) {
-                item {
+                item(key = "act-section-5") {
                     DetailCard(title = stringResource(id = R.string.additional_info_title)) {
                         FormTextField(
                             value = pdfPath,
@@ -1622,7 +1854,7 @@ fun NewActScreen(
             }
 
             if (isDiagnosticDocument && diagnosisType == DiagnosisType.Advanced) {
-                item {
+                item(key = "act-section-6") {
                     DetailCard(title = stringResource(id = R.string.advanced_result_title)) {
                         FormTextField(
                             value = rootCause,
@@ -1643,7 +1875,7 @@ fun NewActScreen(
                 }
             }
 
-            item {
+            item(key = "act-section-7") {
                 DetailCard(title = stringResource(id = R.string.signatures_section_title)) {
                     SignatureEditorCard(
                         title = stringResource(id = R.string.signature_customer_title),
@@ -1746,7 +1978,7 @@ fun NewActScreen(
                 }
             }
 
-            item {
+            item(key = "act-section-8") {
                 Button(
                     onClick = {
                         if (!flushDraft()) return@Button
@@ -1890,7 +2122,7 @@ fun NewActScreen(
                 }
             }
 
-            item {
+            item(key = "act-section-9") {
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
@@ -1916,7 +2148,7 @@ fun NewActScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = stringResource(id = R.string.enterprise_card_detected_dialog_text),
+                        text = stringResource(id = R.string.enterprise_card_detected_dialog_text) + " Нажатие «Применить» заменит заполненные реквизиты показанными значениями. Пустые поля не очищают введённое.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1963,13 +2195,14 @@ fun NewActScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        organizationName = enterpriseCardDetectedName
-                        organizationInn = enterpriseCardDetectedInn
-                        organizationOgrn = enterpriseCardDetectedOgrn
-                        organizationAddress = enterpriseCardDetectedAddress
-                        organizationPhone = enterpriseCardDetectedPhone
-                        organizationEmail = enterpriseCardDetectedEmail
+                        organizationName = enterpriseCardDetectedName.ifBlank { organizationName }
+                        organizationInn = enterpriseCardDetectedInn.ifBlank { organizationInn }
+                        organizationOgrn = enterpriseCardDetectedOgrn.ifBlank { organizationOgrn }
+                        organizationAddress = enterpriseCardDetectedAddress.ifBlank { organizationAddress }
+                        organizationPhone = enterpriseCardDetectedPhone.ifBlank { organizationPhone }
+                        organizationEmail = enterpriseCardDetectedEmail.ifBlank { organizationEmail }
                         showEnterpriseCardDetectedDialog = false
+                        flushDraft()
                     }
                 ) {
                     Text(text = stringResource(id = R.string.apply_enterprise_card_data))
@@ -2640,6 +2873,9 @@ private fun SignaturePad(
     editable: Boolean
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    // Stroke edits must not cancel the active pointer coroutine; read the latest model at gesture start.
+    val currentSignature = androidx.compose.runtime.rememberUpdatedState(signature)
+    val currentOnSignatureChange = androidx.compose.runtime.rememberUpdatedState(onSignatureChange)
     val surfaceColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
     val strokeColor = MaterialTheme.colorScheme.onSurface
 
@@ -2655,13 +2891,13 @@ private fun SignaturePad(
                 shape = RoundedCornerShape(14.dp)
             )
             .onSizeChanged { canvasSize = it }
-            .pointerInput(editable, signature, canvasSize) {
+            .pointerInput(editable, canvasSize) {
                 if (!editable || canvasSize.width == 0 || canvasSize.height == 0) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown()
                     val startPoint = down.position.normalize(canvasSize)
-                    var updatedSignature = signature + SignatureStroke(points = listOf(startPoint))
-                    onSignatureChange(updatedSignature)
+                    var updatedSignature = currentSignature.value + SignatureStroke(points = listOf(startPoint))
+                    currentOnSignatureChange.value(updatedSignature)
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -2669,7 +2905,7 @@ private fun SignaturePad(
                         val updatedStrokePoints =
                             updatedSignature.last().points + change.position.normalize(canvasSize)
                         updatedSignature = updatedSignature.dropLast(1) + SignatureStroke(points = updatedStrokePoints)
-                        onSignatureChange(updatedSignature)
+                        currentOnSignatureChange.value(updatedSignature)
                         change.consume()
                     }
                 }
@@ -3194,187 +3430,6 @@ private fun resolveFileName(context: android.content.Context, uri: Uri): String 
     }.getOrNull()
     return fileName.orEmpty()
 }
-
-private data class EnterpriseCardExtract(
-    val organizationName: String,
-    val organizationInn: String,
-    val organizationOgrn: String,
-    val organizationAddress: String,
-    val organizationPhone: String,
-    val organizationEmail: String
-)
-
-private fun extractEnterpriseCardData(
-    context: android.content.Context,
-    uri: Uri
-): EnterpriseCardExtract? {
-    val text = readEnterpriseCardText(context, uri)?.trim().orEmpty()
-    if (text.isBlank()) return null
-    val lines = text
-        .lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .filterNot { it.containsBankRequisitesMarker() }
-        .toList()
-    if (lines.isEmpty()) return null
-
-    val flattenedText = lines.joinToString(" ") { it }
-        .replace(Regex("""\s+"""), " ")
-        .trim()
-
-    val organizationLabelPrefix = """(?:организац(?:ия|ии)|компан(?:ия|ии)|предприят(?:ие|ия))\s*"""
-    val legalFormPrefix = """(?:ООО|ОАО|ЗАО|АО|ПАО|ИП)\s*"""
-    val name = (
-        Regex(
-            """$organizationLabelPrefix(?:[:\-]\s*)?(\"[^\"]+\"|«[^»]+»|[^,\n;]+)""",
-            RegexOption.IGNORE_CASE
-        ).find(flattenedText)?.groupValues?.getOrNull(1)?.orEmpty()
-            ?: Regex(
-                """$legalFormPrefix(?:\"[^\"]+\"|«[^»]+»|[A-Za-zА-Яа-я0-9\.\- ]{2,})""",
-                RegexOption.IGNORE_CASE
-            ).find(flattenedText)?.value.orEmpty()
-        ).normalizeExtractedField()
-
-    val inn = Regex("""\bИНН\b\D*(\d{10}|\d{12})""", RegexOption.IGNORE_CASE)
-        .find(flattenedText)
-        ?.groupValues
-        ?.getOrNull(1)
-        .orEmpty()
-    val ogrn = Regex("""\bОГРН(?:ИП)?\b\D*(\d{13}|\d{15})""", RegexOption.IGNORE_CASE)
-        .find(flattenedText)
-        ?.groupValues
-        ?.getOrNull(1)
-        .orEmpty()
-    val address = extractFieldByLabel(
-        text = flattenedText,
-        labelRegex = """(?:юридическ(?:ий|ого)\s+адрес|адрес\s+организац(?:ии|ия)|адрес)"""
-    ).ifBlank {
-        Regex(
-            """\b(индекс\s*\d{6}|\d{6})\b[^;\n]*?(?:г\.|город|ул\.|улица|проспект|пр-т|д\.|дом|помещ\.?)""",
-            RegexOption.IGNORE_CASE
-        ).find(flattenedText)?.value.orEmpty()
-    }.normalizeExtractedField()
-
-    val phone = extractFieldByLabel(
-        text = flattenedText,
-        labelRegex = """(?:телефон\s+организац(?:ии|ия)|контактн(?:ый|ого)\s+телефон|телефон|тел\.?)"""
-    ).let { extractedPhoneBlock ->
-        Regex("""(?<!\d)(\+?7|8)[\d\-\s\(\)]{9,}(?!\d)""")
-            .find(extractedPhoneBlock.ifBlank { flattenedText })
-            ?.value
-            .orEmpty()
-            .normalizeExtractedField()
-    }
-    val email = Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE)
-        .find(
-            extractFieldByLabel(
-                text = flattenedText,
-                labelRegex = """(?:e-?mail|электронн(?:ая|ой)\s+почта|почта)"""
-            ).ifBlank { flattenedText }
-        )
-        ?.value
-        .orEmpty()
-        .normalizeExtractedField()
-
-    if (name.isBlank() && inn.isBlank() && ogrn.isBlank() && address.isBlank() && phone.isBlank() && email.isBlank()) return null
-    return EnterpriseCardExtract(
-        organizationName = name,
-        organizationInn = inn,
-        organizationOgrn = ogrn,
-        organizationAddress = address,
-        organizationPhone = phone,
-        organizationEmail = email
-    )
-}
-
-private fun extractFieldByLabel(text: String, labelRegex: String): String {
-    val valuePattern = Regex(
-        """(?:$labelRegex)\s*(?:[:\-]\s*|\s+)(.+?)(?=(?:,?\s*(?:ИНН|КПП|ОГРН(?:ИП)?|(?:юридическ(?:ий|ого)\s+)?адрес|телефон|тел\.?|контактн(?:ый|ого)\s+телефон|банк|БИК|р/с|расч[её]тн(?:ый|ого)\s+сч[её]т|к/с|корреспондентск(?:ий|ого)\s+сч[её]т)\b)|$)""",
-        RegexOption.IGNORE_CASE
-    )
-    return valuePattern.find(text)?.groupValues?.getOrNull(1).orEmpty().normalizeExtractedField()
-}
-
-private fun String.containsBankRequisitesMarker(): Boolean = Regex(
-    """\b(?:банк|БИК|р/с|расч[её]тн(?:ый|ого)\s+сч[её]т|к/с|корреспондентск(?:ий|ого)\s+сч[её]т)\b""",
-    RegexOption.IGNORE_CASE
-).containsMatchIn(this)
-
-private fun String.normalizeExtractedField(): String = trim()
-    .trim(',', ';', '.')
-    .replace(Regex("""\s+"""), " ")
-
-private fun readEnterpriseCardText(context: android.content.Context, uri: Uri): String? {
-    val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
-    val fileName = resolveFileName(context, uri).lowercase(Locale.ROOT)
-    val isPdf = mimeType.contains("pdf") || fileName.endsWith(".pdf") || mimeType.isBlank()
-    val isDocx = mimeType.contains("wordprocessingml.document") || fileName.endsWith(".docx")
-    return when {
-        isDocx -> runCatching { readDocxText(context, uri) }.getOrNull()
-        isPdf -> runCatching { readPdfText(context, uri) }.getOrNull()
-        else -> null
-    }
-}
-
-private fun readPdfText(context: android.content.Context, uri: Uri): String {
-    PDFBoxResourceLoader.init(context.applicationContext)
-    val tempFile = kotlin.runCatching {
-        java.io.File.createTempFile("enterprise_card_", ".pdf", context.cacheDir)
-    }.getOrNull() ?: return ""
-    return try {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            tempFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: return ""
-        PDDocument.load(tempFile).use { document ->
-            PDFTextStripper().getText(document)
-        }
-    } finally {
-        tempFile.delete()
-    }
-}
-
-private fun readDocxText(context: android.content.Context, uri: Uri): String {
-    val documentXml = context.contentResolver.openInputStream(uri)?.use { input ->
-        ZipInputStream(input).use { zipInputStream ->
-            var entry = zipInputStream.nextEntry
-            while (entry != null) {
-                if (entry.name == "word/document.xml") {
-                    return@use zipInputStream.bufferedReader(Charsets.UTF_8).readText()
-                }
-                zipInputStream.closeEntry()
-                entry = zipInputStream.nextEntry
-            }
-            ""
-        }
-    }.orEmpty()
-    if (documentXml.isBlank()) return ""
-
-    val paragraphRegex = Regex("""<w:p\b[\s\S]*?</w:p>""")
-    val textRegex = Regex("""<w:t\b[^>]*>([\s\S]*?)</w:t>""")
-
-    val lines = paragraphRegex.findAll(documentXml).mapNotNull { paragraph ->
-        val paragraphText = textRegex.findAll(paragraph.value)
-            .joinToString(separator = "") { it.groupValues.getOrElse(1) { "" } }
-            .decodeDocxXmlValue()
-            .trim()
-        paragraphText.ifBlank { null }
-    }.toList()
-
-    return if (lines.isNotEmpty()) lines.joinToString("\n") else {
-        textRegex.findAll(documentXml)
-            .joinToString(separator = " ") { it.groupValues.getOrElse(1) { "" } }
-            .decodeDocxXmlValue()
-            .replace(Regex("""\s+"""), " ")
-            .trim()
-    }
-}
-
-private fun String.decodeDocxXmlValue(): String = this
-    .replace("&amp;", "&")
-    .replace("&lt;", "<")
-    .replace("&gt;", ">")
-    .replace("&quot;", "\"")
-    .replace("&apos;", "'")
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable

@@ -14,7 +14,7 @@ python3 tools/source-check/run.py --all
 python3 tools/source-check/check_static.py
 ```
 
-`testFieldTestUnitTest` может оказаться NO-SOURCE: это не PASS Android-тестов; meaningful regression остаются отдельными 28 JVM-группами. Не выполнять assembleRelease/bundle/install/connected-tests. build scans не публиковать. Gradle/Kotlin работают только на host; Android приложение само не запускается.
+`testFieldTestUnitTest` может оказаться NO-SOURCE: это не PASS Android-тестов; meaningful regression остаются отдельными source host regressions (точный результат в отчёте). Не выполнять assembleRelease/bundle/install/connected-tests. build scans не публиковать. Gradle/Kotlin работают только на host; Android приложение само не запускается.
 
 Изоляция: test data только Context.filesDir/applicationInfo.dataDir, legacy preferences также только test context. Нет обращения к рабочему com.example.dguactapp dataDir/authorities, sharedUserId или общему каталогу. FileProvider `${applicationId}.fileprovider`, roots только private act_photos/act_pdfs. PDF имена TEST_ + actId/revision/UUID, сохранение только через системный CreateDocument; share PDF не export базы. Никакого переноса/извлечения working data. На первой установке test package ожидается пустым, готовых записей в APK нет.
 
@@ -22,10 +22,12 @@ Test manifest удаляет INTERNET/network state/broad storage/media permissi
 
 Перед передачей обязательны фактические apksigner/aapt2 проверки package/label/launcher/provider/permissions/path XML/backup rules и содержимого APK. Проверять production package отдельно по уже переданному установленному APK A без доступа к планшету. Другой package даёт штатное основание установки рядом; выполнение на конкретной Ulefone/камера/SAF/PDF/печать не доказаны host build.
 
-Ручная установка владельцем: открыть только новый APK → имя «ДГУ Ямал — ТЕСТ», действие «Установить» → жёлтый значок и пустой список → отключить временное разрешение установки неизвестных приложений. При «Обновить», старом имени, запросе удалить/очистить или блокировке Play Protect — отменить и передать сообщение; защиту не отключать.
+Ручное ОБНОВЛЕНИЕ уже установленного тестового приложения владельцем: открыть только новый dgu-yamal-test-draft-fix.apk → имя «ДГУ Ямал — ТЕСТ», package com.example.dguactapp.test, та же подпись c34efca5… и versionCode3 → «Обновить» допустимо ТОЛЬКО тестовому приложению → сохранить прежние synthetic записи, проверить черновики. Рабочее com.example.dguactapp не обновлять. Не удалять/не очищать; не ожидать пустой список при update. Старое имя, подпись/совместимость не совпали, запрос удаления/очистки или блокировка Play Protect — отменить, защиту не отключать. Полная инструкция manual-test-update.md в новом output.
 
 Manual NOT RUN: один синтетический заказчик, две единицы/две заявки, каждый из трёх актов, по3фото камера+галерея, draft/Назад/reopen, подтверждённая serial correction той же единицы, PDF длинный serial/всефото/A4 preview. Повторный ремонт одной equipmentId через many requests всё ещё ограничен моделью, не скрывать. Роли, новые БД, дизайн, Google/ИНН/backend не реализованы.
 
 Официальные источники: [AGP8.6](https://developer.android.com/build/releases/agp-8-6-0-release-notes), [Wrapper/checksums](https://docs.gradle.org/current/userguide/gradle_wrapper.html), [build variants](https://developer.android.com/build/build-variants), [manifest placeholders](https://developer.android.com/build/manage-manifests), [ограничения backup](https://developer.android.com/identity/data/autobackup). Доступность runtime и безопасности обновления рабочего APK не выводить из одного имени/версии.
 
 Первый полный lint выявил6NewApi(File.toPath/Path.startsWith приmin24) и1camera feature error. Исправлены реальной canonical/segment-aware проверкой через java.io.File и явной optional camera feature, без baseline/подавления. Новая host-регрессия проверяет sibling-prefix, ../ и symlink escape. Test build исключает ненужные debug-only preview/testing tooling dependencies; production debug deps сохранены.
+
+Текущий bugfix от9764bac: [аудит](draft-fix-audit.md), [UI-план](tablet-ui-plan.md), [статические эскизы](tablet-ui-mockups.html). Новая модель DTOv2, прежние source/API/production версии сохранены; только fieldTest code3 и -draftfix1.

@@ -33,7 +33,7 @@ for line in oldpdf.splitlines():
  if 'drawParagraph(' in line and any(term in line for term in ['Гарантия','Заказчик подтверждает','претензий','оборудование передано','Оборудование передано']):assert line.strip() in pdf,line
 assert '.take(62)' not in pdf
 assert not any(p.endswith(('.apk', '.aab', '.keystore', '.jks')) for p in subprocess.check_output(['git','ls-files'],cwd=root,text=True).splitlines())
-assert subprocess.check_output(['git','branch','--show-current'],cwd=root,text=True).strip()in {'feature/dgu-local-reliability-2026-10-23', 'feature/dgu-tablet-test-build-2026-10-24'}
+assert subprocess.check_output(['git','branch','--show-current'],cwd=root,text=True).strip()in {'feature/dgu-local-reliability-2026-10-23', 'feature/dgu-tablet-test-build-2026-10-24', 'bugfix/dgu-draft-state-2026-10-24'}
 print('PASS identity/version/SDK/production application settings unchanged; only optional camera feature declared; XML and string IDs valid; legal blocks unchanged; no truncated serial or tracked APK/key; permitted feature branch only')
 
 if (root/'app/src/fieldTest/AndroidManifest.xml').exists():
@@ -50,3 +50,23 @@ if (root/'app/src/fieldTest/AndroidManifest.xml').exists():
   assert permissions['android.permission.'+name]=='remove'
  assert ET.parse(root/'app/src/fieldTest/res/values/strings.xml').getroot().find('string').text=='ДГУ Ямал — ТЕСТ'
  print('PASS dedicated test suffix/label/backup/network/storage source declarations; production application attributes/provider paths preserved (actual APK must be checked independently)')
+
+# Schema fields must be explicitly captured and restored by the actual form, not UI registry save data.
+model=(app/'ActFormDraft.kt').read_text().split('internal object ActFormDraftCodec')[0]
+fields=re.findall(r'val (\w+):',model)
+form=(app/'MainActivity.kt').read_text().split('fun NewActScreen(')[1].split('private fun DiagnosisTypeSelector')[0]
+for name in fields:
+ if name=='legacyRegistryArchive':continue
+ assert 'restored?.'+name in form,('missing actual form restore',name)
+ assert re.search(r'\b'+name+r' = '+name+r'(?:\.toList\(\))?,',form),('missing actual form capture',name)
+durable=(app/'DurableForm.kt').read_text()
+assert 'performSave' not in durable and 'SaveableStateRegistry' not in durable
+assert 'LocalActDraftSession provides session' in durable
+assert 'onVariants(selector().withBuildType("fieldTest"))' in build and 'output.versionCode.set(3)' in build
+print('PASS explicit66business fields capture/restore in actual form; no UI registry disk capture; test-only versionCode3 override')
+
+signature=(app/'MainActivity.kt').read_text().split('private fun SignaturePad(')[1].split('private fun PhotoGalleryEditor')[0]
+assert '.pointerInput(editable, canvasSize)' in signature
+assert '.pointerInput(editable, signature' not in signature
+assert 'rememberUpdatedState(signature)' in signature and 'currentOnSignatureChange.value(updatedSignature)' in signature
+print('PASS signature gesture key excludes changing stroke state and reads latest model/callback; actual touch NOT RUN')

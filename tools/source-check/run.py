@@ -21,8 +21,8 @@ cp=':'.join(map(str,[root/'kotlin-stdlib.jar',root/'annotations.jar',root/'json.
     [p for _,p in groups.values() if 'compose.compiler.compiler-' not in p.name]))
 compiler=':'.join(map(str,root.glob('*.jar')))
 source=project/'app/src/main/java/com/example/dguactapp'
-files=[source/(s+'.kt') for s in ['ActStorage','ActMetadata','DiagnosticChecklist','SignatureData','LocalRepository','AtomicSnapshotWriter','LocalRules','DraftCodec']]
-files+=list((project/'tools/source-check/stubs').glob('*.kt'))+[project/'tools/source-check/Regression.kt', project/'tools/source-check/ReviewRegression.kt']
+files=[source/(s+'.kt') for s in ['ActStorage','ActMetadata','DiagnosticChecklist','SignatureData','LocalRepository','AtomicSnapshotWriter','LocalRules','DraftCodec','ActFormDraft','EnterpriseCardParser']]
+files+=list((project/'tools/source-check/stubs').glob('*.kt'))+[project/'tools/source-check/Regression.kt', project/'tools/source-check/ReviewRegression.kt',project/'tools/source-check/DraftFixRegression.kt']
 cmd=[str(java),'-cp',compiler,'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-jvm-target','17','-classpath',cp,'-d',str(work/'tests.jar')]+list(map(str,files))
 hashes={str(p.relative_to(project)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 commands=[cmd]
@@ -30,12 +30,12 @@ result=subprocess.run(cmd,cwd=project,text=True,stdout=subprocess.PIPE,stderr=su
 (work/'compile.log').write_text(result.stdout)
 print(result.stdout)
 if result.returncode:sys.exit(result.returncode)
-programs=['ReviewRegressionKt'] if '--review' in sys.argv else (['RegressionKt','ReviewRegressionKt'] if '--all' in sys.argv else ['RegressionKt'])
+programs=['ReviewRegressionKt'] if '--review' in sys.argv else (['RegressionKt','ReviewRegressionKt','DraftFixRegressionKt'] if '--all' in sys.argv else ['RegressionKt'])
 for program in programs:
     command=[str(java),'-cp',str(work/'tests.jar')+':'+cp,'com.example.dguactapp.'+program]
     commands.append(command)
     result=subprocess.run(command,env={**os.environ,'DGU_CHECK_FIXTURES':str(work/'fixtures')},cwd=project,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-    (work/('review-results.txt' if program=='ReviewRegressionKt' else 'results.txt')).write_text(result.stdout)
+    (work/('draft-fix-results.txt' if program=='DraftFixRegressionKt' else ('review-results.txt' if program=='ReviewRegressionKt' else 'results.txt'))).write_text(result.stdout)
     print(result.stdout)
     if result.returncode:sys.exit(result.returncode)
 unchanged=all(hashlib.sha256((project/p).read_bytes()).hexdigest()==h for p,h in hashes.items())

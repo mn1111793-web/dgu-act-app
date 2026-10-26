@@ -34,10 +34,16 @@ internal fun readDocxText(bytes: ByteArray): String {
         }
         found ?: error("DOCX не содержит word/document.xml")
     }
-    val text=Regex("""<w:p\b[\s\S]*?</w:p>""").findAll(xml).map { paragraph ->
-        Regex("""<w:t\b[^>]*>([\s\S]*?)</w:t>""").findAll(paragraph.value).joinToString("") { it.groupValues[1] }
+    val text=Regex("""<(?:\w+:)?p\b[\s\S]*?</(?:\w+:)?p>""").findAll(xml).map { paragraph ->
+        Regex("""<(?:\w+:)?t\b[^>]*>([\s\S]*?)</(?:\w+:)?t>|<(?:\w+:)?(tab|br|cr)\b[^>]*/>""").findAll(paragraph.value).joinToString("") {
+            if(it.groupValues[2]=="tab") "\t" else if(it.groupValues[2].isNotBlank()) "\n" else it.groupValues[1]
+        }
     }.joinToString("\n")
-    return text.replace("&lt;","<").replace("&gt;",">").replace("&quot;","\"").replace("&apos;","'").replace("&amp;","&")
+    val numeric=Regex("""&#(x[0-9a-fA-F]+|\d+);""").replace(text) { match->
+        val code=if(match.groupValues[1].startsWith("x"))match.groupValues[1].drop(1).toIntOrNull(16) else match.groupValues[1].toIntOrNull()
+        if(code!=null && Character.isValidCodePoint(code))String(Character.toChars(code)) else match.value
+    }
+    return numeric.replace("&lt;","<").replace("&gt;",">").replace("&quot;","\"").replace("&apos;","'").replace("&amp;","&")
 }
 
 internal data class EnterpriseCardExtract(
@@ -60,9 +66,8 @@ internal fun parseEnterpriseCardText(rawText: String): EnterpriseCardExtract? {
         .toList()
     if (lines.isEmpty()) return null
 
-    val flattenedText = lines.joinToString(" ") { it }
-        .replace(Regex("""\s+"""), " ")
-        .trim()
+    // Keep field boundaries: flattening made unquoted names/addresses swallow other requisites.
+    val flattenedText = lines.joinToString("\n")
 
     val organizationLabelPrefix = """(?:организац(?:ия|ии)|компан(?:ия|ии)|предприят(?:ие|ия))\s*"""
     val legalFormPrefix = """(?:ООО|ОАО|ЗАО|АО|ПАО|ИП)\s*"""
@@ -87,10 +92,16 @@ internal fun parseEnterpriseCardText(rawText: String): EnterpriseCardExtract? {
         ?.groupValues
         ?.getOrNull(1)
         .orEmpty()
-    val address = extractFieldByLabel(
+    val addressStart=lines.indexOfFirst { Regex("""^(?:юридическ(?:ий|ого)\s+адрес|адрес\s+организац(?:ии|ия)|адрес)\s*[:\-]?""",RegexOption.IGNORE_CASE).containsMatchIn(it) }
+    val addressBlock=if(addressStart>=0) {
+        val first=lines[addressStart].replace(Regex("""^(?:юридическ(?:ий|ого)\s+адрес|адрес\s+организац(?:ии|ия)|адрес)\s*[:\-]?\s*""",RegexOption.IGNORE_CASE),"")
+        val next=lines.drop(addressStart+1).takeWhile { !Regex("""^(?:ИНН|КПП|ОГРН|тел|контакт|e-?mail|почта|банк|БИК|р/с|к/с|https?://|ФИАС|ГАР)\b""",RegexOption.IGNORE_CASE).containsMatchIn(it) }
+        extractFieldByLabel("Адрес: "+(listOf(first)+next).joinToString(" "),"адрес")
+    }else ""
+    val address = addressBlock.ifBlank { extractFieldByLabel(
         text = flattenedText,
         labelRegex = """(?:юридическ(?:ий|ого)\s+адрес|адрес\s+организац(?:ии|ия)|адрес)"""
-    ).ifBlank {
+    ) }.ifBlank {
         Regex(
             """\b(индекс\s*\d{6}|\d{6})\b[^;\n]*?(?:г\.|город|ул\.|улица|проспект|пр-т|д\.|дом|помещ\.?)""",
             RegexOption.IGNORE_CASE
@@ -101,8 +112,11 @@ internal fun parseEnterpriseCardText(rawText: String): EnterpriseCardExtract? {
         text = flattenedText,
         labelRegex = """(?:телефон\s+организац(?:ии|ия)|контактн(?:ый|ого)\s+телефон|телефон|тел\.?)"""
     ).let { extractedPhoneBlock ->
-        Regex("""(?<!\d)(\+?7|8)[\d\-\s\(\)]{9,}(?!\d)""")
-            .find(extractedPhoneBlock.ifBlank { flattenedText })
+        val source=extractedPhoneBlock.ifBlank {
+            lines.filter { !Regex("""\b(?:ИНН|КПП|ОГРН|БИК|р/с|к/с)\b""",RegexOption.IGNORE_CASE).containsMatchIn(it) && (it.contains('+') || it.contains('(') || Regex("""тел""",RegexOption.IGNORE_CASE).containsMatchIn(it)) }.joinToString("\n")
+        }
+        Regex("""(?<!\d)(?:\+?7|8)(?:[\- ()]*\d){10}(?![\- ()]*\d)""")
+            .find(source)
             ?.value
             .orEmpty()
             .normalizeExtractedField()
@@ -131,7 +145,7 @@ internal fun parseEnterpriseCardText(rawText: String): EnterpriseCardExtract? {
 
 private fun extractFieldByLabel(text: String, labelRegex: String): String {
     val valuePattern = Regex(
-        """(?:$labelRegex)\s*(?:[:\-]\s*|\s+)(.+?)(?=(?:,?\s*(?:ИНН|КПП|ОГРН(?:ИП)?|(?:юридическ(?:ий|ого)\s+)?адрес|телефон|тел\.?|контактн(?:ый|ого)\s+телефон|банк|БИК|р/с|расч[её]тн(?:ый|ого)\s+сч[её]т|к/с|корреспондентск(?:ий|ого)\s+сч[её]т)\b)|$)""",
+        """(?:$labelRegex)[ \t]*(?:[:\-][ \t]*|[ \t]+)(.+?)(?=(?:,?[ \t]*(?:ИНН|КПП|ОГРН(?:ИП)?|(?:юридическ(?:ий|ого)\s+)?адрес|телефон|тел\.?|контактн(?:ый|ого)\s+телефон|e-?mail|почта|https?://|ФИАС|ГАР|банк|БИК|р/с|расч[её]тн(?:ый|ого)\s+сч[её]т|к/с|корреспондентск(?:ий|ого)\s+сч[её]т)\b)|$)""",
         RegexOption.IGNORE_CASE
     )
     return valuePattern.find(text)?.groupValues?.getOrNull(1).orEmpty().normalizeExtractedField()

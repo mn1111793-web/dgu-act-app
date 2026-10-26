@@ -36,7 +36,7 @@ android {
         create("fieldTest") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".test"
-            versionNameSuffix = "-draftfix1"
+            versionNameSuffix = "-fieldflow1"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("fieldTest")
             matchingFallbacks += listOf("debug")
@@ -102,6 +102,6 @@ dependencies {
 // Update only the already installed isolated test app, never production version metadata.
 androidComponents {
     onVariants(selector().withBuildType("fieldTest")) { variant ->
-        variant.outputs.forEach { output -> output.versionCode.set(3) }
+        variant.outputs.forEach { output -> output.versionCode.set(4) }
     }
 }

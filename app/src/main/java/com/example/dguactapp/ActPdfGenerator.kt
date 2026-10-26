@@ -25,8 +25,7 @@ object ActPdfGenerator {
     private const val pageHeight = 842
     private const val margin = 36f
     private const val blockGap = 12f
-    private const val executorRequisites =
-        "Индивидуальный предприниматель Малышева Наталья Александровна, ЯНАО, г. Новый Уренгой, проспект Губкина, 21 б, кв. 52, ИНН 890411627911, ОГРНИП 318890100008958, \"ДГУ Ямал\"."
+    private const val executorRequisites = "ДГУ Ямал. Реквизиты Исполнителя указываются при оформлении."
 
     private val legalSection = listOf(
         "3.1. Заказчик подтверждает, что оборудование передано Исполнителю для проведения диагностики.",

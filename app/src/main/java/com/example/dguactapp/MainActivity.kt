@@ -137,7 +137,7 @@ class MainActivity : ComponentActivity() {
                                 color = Color(0xFF123F56),
                                 fontWeight = FontWeight.Bold
                             )
-                            androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) { DguActApp() }
+                            androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) { FieldWorkflowScreen() }
                         }
                     } else {
                         DguActApp()
@@ -2867,7 +2867,7 @@ private fun SignatureReadonlyCard(
 }
 
 @Composable
-private fun SignaturePad(
+internal fun SignaturePad(
     signature: List<SignatureStroke>,
     onSignatureChange: (List<SignatureStroke>) -> Unit,
     editable: Boolean
